@@ -1,0 +1,57 @@
+<?php
+require_once(__DIR__ . '/../../config/paths.php');
+require_once(__DIR__ . '/../../controlador/AuthController.php');
+require_once(__DIR__ . '/../../controlador/EstudianteController.php');
+
+$auth = new AuthController();
+$auth->checkRole(3); // Solo estudiantes
+
+$estudianteController = new EstudianteController();
+$cursos = $estudianteController->getMisCursos($_SESSION['user_id']);
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mis Cursos</title>
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
+</head>
+<body>
+    <!-- Header con sesión -->
+    <?php include(__DIR__ . '/../partials/headersesion.php'); ?>
+
+    <main class="dashboard">
+        <div class="sidebar">
+            <h2>Menú Estudiante</h2>
+            <ul>
+                <li><a href="perfilestudiante.php">Perfil</a></li>
+                <li><a href="cursosestudiante.php">Mis Cursos</a></li>
+                <li><a href="matriculaestudiante.php">Matrícula</a></li>
+                <li><a href="<?= BASE_URL ?>controlador/AuthController.php?action=logout">Cerrar Sesión</a></li>
+            </ul>
+        </div>
+
+        <div class="content">
+            <h1>Mis Cursos</h1>
+            
+            <div class="course-list">
+                <?php foreach ($cursos as $curso): ?>
+                <div class="course-card">
+                    <h3><?= htmlspecialchars($curso['nombre']) ?></h3>
+                    <p><strong>Profesor:</strong> <?= htmlspecialchars($curso['profesor_nombre'] . ' ' . $curso['profesor_apellido']) ?></p>
+                    <p><strong>Descripción:</strong> <?= htmlspecialchars($curso['descripcion']) ?></p>
+                    <p><strong>Nota:</strong> <?= $curso['nota'] ?? 'En progreso' ?></p>
+                    <a href="#" class="btn small">Ver Detalles</a>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <?php include(__DIR__ . '/../partials/footer.html'); ?>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</body>
+</html>
