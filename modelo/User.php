@@ -186,5 +186,11 @@ class User {
             return false;
         }
     }
+    public function blockUser($userId) {
+        $query = "UPDATE {$this->table} SET contrasena = 'bloqueado' WHERE id = :id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':id', $userId);
+        return $stmt->execute();
+    }
 }
 ?>

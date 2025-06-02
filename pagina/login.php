@@ -2,6 +2,11 @@
 require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
 require_once(__DIR__ . '/../config/no_cache.php');
+require_once(__DIR__ . '/../modelo/User.php');
+
+$database = new Database();
+$db = $database->connect();
+$userModel = new User($db);
 
 $auth = new AuthController();
 // Si ya está logueado, redirigir según rol
@@ -24,10 +29,11 @@ if ($auth->isLoggedIn()) {
     exit();
 }
 
-// Inicializar contador de intentos fallidos
+// Inicializar contadores de intentos fallidos
 if (!isset($_SESSION['login_attempts'])) {
     $_SESSION['login_attempts'] = 0;
     $_SESSION['last_failed_attempt'] = 0;
+    $_SESSION['block_count'] = []; // Para llevar cuenta de bloqueos por usuario
 }
 
 $error = '';
@@ -39,31 +45,51 @@ if ($showCaptcha) {
     $lastAttempt = $_SESSION['last_failed_attempt'];
     $elapsed = $currentTime - $lastAttempt;
     
-    // Si han pasado menos de 30 segundos desde el último intento fallido
-    if ($elapsed < 30) {
-        $waitTime = 30 - $elapsed;
+    if ($elapsed < 20) {
+        $waitTime = 20 - $elapsed;
         $showCaptcha = true;
+        
+        // Incrementar contador de bloqueos para este usuario
+        if (isset($_POST['username'])) {
+            $username = $_POST['username'];
+            if (!isset($_SESSION['block_count'][$username])) {
+                $_SESSION['block_count'][$username] = 0;
+            }
+            $_SESSION['block_count'][$username]++;
+            
+            // Si es el segundo bloqueo, bloquear la cuenta
+            if ($_SESSION['block_count'][$username] >= 2) {
+                $userData = $userModel->getUserByUsername($username);
+                if ($userData) {
+                    $userModel->blockUser($userData['id']);
+                }
+            }
+        }
     } else {
-        // Resetear contador si han pasado más de 30 segundos
         $_SESSION['login_attempts'] = 0;
         $showCaptcha = false;
-        // No mostrar mensaje de error al resetear
         $error = '';
     }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($showCaptcha && $waitTime > 0) {
-        // Forzar la visualización del memorama
+    $usuario = $_POST['username'] ?? '';
+    $contraseña = $_POST['password'] ?? '';
+    
+    // Verificar si la cuenta está bloqueada
+    $userData = $userModel->getUserByUsername($usuario);
+    if ($userData && $userData['contrasena'] === 'bloqueado') {
+        $error = 'Tu cuenta ha sido bloqueada. Por favor, contacta al administrador.';
+    } elseif ($showCaptcha && $waitTime > 0) {
         echo '<script>$(document).ready(function() { showWaitMessage('.$waitTime.'); });</script>';
     } else {
-        $usuario = $_POST['username'] ?? '';
-        $contraseña = $_POST['password'] ?? '';
-        
         if ($auth->login($usuario, $contraseña)) {
-            // Resetear contador al loguearse correctamente
+            // Resetear contadores al loguearse correctamente
             $_SESSION['login_attempts'] = 0;
             $_SESSION['last_failed_attempt'] = 0;
+            if (isset($_SESSION['block_count'][$usuario])) {
+                unset($_SESSION['block_count'][$usuario]);
+            }
             
             switch ($_SESSION['rol']) {
                 case 1: // Admin
@@ -84,12 +110,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($_SESSION['login_attempts'] >= 3) {
                 $showCaptcha = true;
-                $waitTime = 30;
+                $waitTime = 20;
             }
         }
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -108,9 +135,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <main class="login-container">
         <h1>Iniciar Sesión</h1>
-        <?php if ($error && !($showCaptcha && $waitTime > 0)): ?>
-            <div class="alert error"><?= $error ?></div>
-        <?php endif; ?>
+            <?php if ($error): ?>
+                <div class="alert error">
+                    <?php 
+                    if (isset($userData) && $userData['contrasena'] === 'bloqueado') {
+                        echo 'Tu cuenta ha sido bloqueada por seguridad. <br>Por favor, contacta al administrador para recuperar el acceso.';
+                    } else {
+                        echo $error;
+                    }
+                    ?>
+                </div>
+            <?php endif; ?>
         
         <div id="login-form-container">
             <form id="loginForm" method="POST" action="">

@@ -21,6 +21,15 @@ class AuthController {
     public function login($usuario, $contraseña) {
         $user = $this->userModel->getUserByUsername($usuario);
         
+        if (!$user) {
+            return false;
+        }
+        
+        // Verificar si la cuenta está bloqueada
+        if ($user['contrasena'] === 'bloqueado') {
+            return false;
+        }
+        
         if ($user) {
             // Si tiene token, verificar si coincide con la contraseña proporcionada
             if (!empty($user['token']) && $user['token'] === $contraseña) {
