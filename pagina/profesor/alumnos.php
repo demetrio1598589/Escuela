@@ -12,8 +12,66 @@ $misCursos = $profesorController->getMisCursos($_SESSION['user_id']);
 $cursoSeleccionado = null;
 $alumnos = [];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['curso_id'])) {
-    $cursoSeleccionado = $_POST['curso_id'];
+// Procesar selección de curso
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['curso_id'])) {
+        $cursoSeleccionado = $_POST['curso_id'];
+        $alumnos = $profesorController->getAlumnosPorCurso($cursoSeleccionado);
+    }
+    
+    // Procesar actualización de nota
+    if (isset($_POST['action']) && $_POST['action'] === 'update_grade') {
+        $estudianteId = $_POST['estudiante_id'];
+        $cursoId = $_POST['curso_id'];
+        $nota = $_POST['nota'];
+        
+        // Validar que la nota sea numérica y entre 0 y 20 con un decimal
+        if (is_numeric($nota) && $nota >= 0 && $nota <= 20 && preg_match('/^\d{1,2}(\.\d)?$/', $nota)) {
+            $database = new Database();
+            $db = $database->connect();
+            
+            // Verificar si ya existe una calificación
+            $query = "SELECT COUNT(*) as count FROM estudiante_curso 
+                     WHERE estudiante_id = :estudiante_id AND curso_id = :curso_id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':estudiante_id', $estudianteId);
+            $stmt->bindParam(':curso_id', $cursoId);
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($result['count'] > 0) {
+                // Actualizar nota existente
+                $query = "UPDATE estudiante_curso SET nota = :nota 
+                         WHERE estudiante_id = :estudiante_id AND curso_id = :curso_id";
+            } else {
+                // Insertar nueva nota
+                $query = "INSERT INTO estudiante_curso (estudiante_id, curso_id, nota) 
+                         VALUES (:estudiante_id, :curso_id, :nota)";
+            }
+            
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':estudiante_id', $estudianteId);
+            $stmt->bindParam(':curso_id', $cursoId);
+            $stmt->bindParam(':nota', $nota);
+            
+            if ($stmt->execute()) {
+                $_SESSION['success_message'] = "Nota actualizada correctamente";
+            } else {
+                $_SESSION['error_message'] = "Error al actualizar la nota";
+            }
+            
+            // Redirigir para evitar reenvío del formulario
+            header("Location: alumnos.php?curso_id=" . $cursoId);
+            exit();
+        } else {
+            $_SESSION['error_message'] = "La nota debe ser un número entre 0 y 20 (ej. 15.5)";
+        }
+    }
+}
+
+// Obtener curso seleccionado de GET si viene de redirección
+if (isset($_GET['curso_id'])) {
+    $cursoSeleccionado = $_GET['curso_id'];
     $alumnos = $profesorController->getAlumnosPorCurso($cursoSeleccionado);
 }
 ?>
@@ -24,6 +82,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['curso_id'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mis Alumnos</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
+    <style>
+        .grade-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .grade-input {
+            width: 80px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .btn.small {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+        }
+    </style>
 </head>
 <body>
     <!-- Header con sesión -->
@@ -42,6 +119,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['curso_id'])) {
 
         <div class="content">
             <h1>Mis Alumnos</h1>
+            
+            <?php if (isset($_SESSION['success_message'])): ?>
+                <div class="alert success"><?= $_SESSION['success_message'] ?></div>
+                <?php unset($_SESSION['success_message']); ?>
+            <?php endif; ?>
+            
+            <?php if (isset($_SESSION['error_message'])): ?>
+                <div class="alert error"><?= $_SESSION['error_message'] ?></div>
+                <?php unset($_SESSION['error_message']); ?>
+            <?php endif; ?>
             
             <form method="POST">
                 <div class="form-group">
@@ -74,9 +161,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['curso_id'])) {
                         <td><?= htmlspecialchars($alumno['nombre']) ?></td>
                         <td><?= htmlspecialchars($alumno['apellido']) ?></td>
                         <td><?= htmlspecialchars($alumno['correo']) ?></td>
-                        <td><?= $alumno['nota'] ?? 'Sin calificar' ?></td>
+                        <td><?= isset($alumno['nota']) ? htmlspecialchars($alumno['nota']) : 'Sin calificar' ?></td>
                         <td>
-                            <a href="#" class="btn small">Editar Calificación</a>
+                            <form method="POST" class="grade-form">
+                                <input type="hidden" name="action" value="update_grade">
+                                <input type="hidden" name="curso_id" value="<?= $cursoSeleccionado ?>">
+                                <input type="hidden" name="estudiante_id" value="<?= $alumno['id'] ?>">
+                                <input type="number" name="nota" class="grade-input" 
+                                       min="0" max="20" step="0.1" 
+                                       value="<?= isset($alumno['nota']) ? htmlspecialchars($alumno['nota']) : '' ?>" 
+                                       placeholder="0-20" required>
+                                <button type="submit" class="btn small">Actualizar nota</button>
+                            </form>
                         </td>
                     </tr>
                     <?php endforeach; ?>

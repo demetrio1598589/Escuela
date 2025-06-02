@@ -8,15 +8,16 @@ class Matricula {
     }
 
     public function getCursosByEstudiante($estudianteId) {
-        $query = "SELECT c.*, ec.nota 
-                  FROM {$this->table} ec
-                  JOIN cursos c ON ec.curso_id = c.id
-                  WHERE ec.estudiante_id = :estudiante_id";
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(':estudiante_id', $estudianteId);
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
+    $query = "SELECT c.*, u.nombre as profesor_nombre, u.apellido as profesor_apellido, ec.nota 
+              FROM {$this->table} ec
+              JOIN cursos c ON ec.curso_id = c.id
+              JOIN usuarios u ON c.profesor_id = u.id
+              WHERE ec.estudiante_id = :estudiante_id";
+    $stmt = $this->conn->prepare($query);
+    $stmt->bindParam(':estudiante_id', $estudianteId);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
     public function getEstudiantesByCurso($cursoId) {
         $query = "SELECT u.*, ec.nota 

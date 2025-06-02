@@ -1,6 +1,7 @@
 <?php
 require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
+require_once(__DIR__ . '/../config/no_cache.php');
 
 $auth = new AuthController();
 
@@ -32,10 +33,28 @@ if ($auth->isLoggedIn()) {
     <?php include(__DIR__ . '/partials/header.php'); ?>
 
     <main>
-        <h1>Bienvenido a la Plataforma Educativa</h1><br>
-        <p>Por favor inicia sesión para acceder a tu cuenta</p><br>
-        <a href="<?= BASE_URL ?>pagina/login.php" class="btn">Iniciar Sesión</a> 
-        <a href="<?= BASE_URL ?>pagina/registrar.php" class="btn">Registrarse</a>
+        <h1>Bienvenido a la Plataforma Educativa</h1>
+        
+        <div class="welcome-section">
+            <p>Nuestra plataforma educativa ofrece herramientas innovadoras para estudiantes y profesores. Conéctate con tu comunidad educativa, accede a materiales de estudio y participa en clases virtuales interactivas.</p>
+            
+            <div class="features">
+                <h2>¿Qué puedes hacer en nuestra plataforma?</h2>
+                <ul>
+                    <li>Acceder a cursos en línea de diversas materias</li>
+                    <li>Participar en foros de discusión con compañeros</li>
+                    <li>Entregar tareas y recibir retroalimentación</li>
+                    <li>Visualizar tu progreso académico</li>
+                    <li>Conectar con tutores y profesores</li>
+                </ul>
+            </div>            
+        </div>
+        <p>Por favor inicia sesión para acceder a tu cuenta</p>
+        
+        <div class="action-buttons">
+            <a href="<?= BASE_URL ?>pagina/login.php" class="btn-index">Iniciar Sesión</a> 
+            <a href="<?= BASE_URL ?>pagina/registrar.php" class="btn-index">Registrarse</a>
+        </div>        
     </main>
 
     <!-- Footer -->

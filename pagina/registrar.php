@@ -1,41 +1,62 @@
 <?php
 require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
+require_once(__DIR__ . '/../config/no_cache.php');
 
-$auth = new AuthController();
 $error = '';
 $success = '';
+$formData = [
+    'nombre' => '',
+    'apellido' => '',
+    'usuario' => '',
+    'email' => ''
+];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $nombre = $_POST['nombre'] ?? '';
-    $apellido = $_POST['apellido'] ?? '';
-    $usuario = $_POST['usuario'] ?? '';
-    $contraseña = $_POST['password'] ?? '';
-    $confirmPassword = $_POST['confirmPassword'] ?? '';
-    $correo = $_POST['email'] ?? '';
-    $rol = $_POST['role'] ?? 3; // Por defecto estudiante
-    
-    // Validaciones básicas
-    if ($contraseña !== $confirmPassword) {
-        $error = 'Las contraseñas no coinciden';
-    } elseif (strlen($contraseña) < 6) {
-        $error = 'La contraseña debe tener al menos 6 caracteres';
-    } else {
-        if ($auth->register($nombre, $apellido, $usuario, $contraseña, $correo, $rol)) {
-            $success = 'Registro exitoso. Ahora puedes iniciar sesión.';
-            header('Refresh: 3; url=' . BASE_URL . 'pagina/login.php');
-        } else {
-            $error = 'El usuario ya existe o hubo un error en el registro';
+    $formData = [
+        'nombre' => trim($_POST['nombre'] ?? ''),
+        'apellido' => trim($_POST['apellido'] ?? ''),
+        'usuario' => trim($_POST['usuario'] ?? ''),
+        'email' => trim($_POST['email'] ?? ''),
+        'password' => $_POST['password'] ?? '',
+        'confirmPassword' => $_POST['confirmPassword'] ?? ''
+    ];
+
+    try {
+        // Validación de confirmación de contraseña
+        if ($formData['password'] !== $formData['confirmPassword']) {
+            throw new Exception("Las contraseñas no coinciden");
         }
+
+        $auth = new AuthController();
+        
+        $userId = $auth->register(
+            $formData['nombre'],
+            $formData['apellido'],
+            $formData['usuario'],
+            $formData['password'],
+            $formData['email']
+        );
+        
+        // Redirigir directamente a bienvenida.php después del registro exitoso
+        header('Location: ' . BASE_URL . 'pagina/estudiante/bienvenida.php');
+        exit();
+        
+    } catch (Exception $e) {
+        $error = $e->getMessage();
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registrarse</title>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Registro de Estudiante</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login_styles.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
 </head>
@@ -44,53 +65,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php include(__DIR__ . '/partials/header.php'); ?>
 
     <main class="login-container">
-        <h1>Registrarse</h1>
+        <h1>Registro de Estudiante</h1>
+        
         <?php if ($error): ?>
-            <div class="alert error"><?= $error ?></div>
+            <div class="alert error"><?= htmlspecialchars($error) ?></div>
         <?php endif; ?>
-        <?php if ($success): ?>
-            <div class="alert success"><?= $success ?></div>
-        <?php endif; ?>
-        <form id="registerForm" method="POST" action="">
+        
+        <form method="POST" action="">
             <div class="form-group">
                 <label for="nombre">Nombre:</label>
-                <input type="text" id="nombre" name="nombre" required>
+                <input type="text" id="nombre" name="nombre" required
+                       value="<?= htmlspecialchars($formData['nombre']) ?>">
             </div>
+            
             <div class="form-group">
                 <label for="apellido">Apellido:</label>
-                <input type="text" id="apellido" name="apellido" required>
+                <input type="text" id="apellido" name="apellido" required
+                       value="<?= htmlspecialchars($formData['apellido']) ?>">
             </div>
+            
             <div class="form-group">
                 <label for="email">Correo Electrónico:</label>
-                <input type="email" id="email" name="email" required>
+                <input type="email" id="email" name="email" required
+                       value="<?= htmlspecialchars($formData['email']) ?>">
             </div>
+            
             <div class="form-group">
                 <label for="usuario">Usuario:</label>
-                <input type="text" id="usuario" name="usuario" required>
+                <input type="text" id="usuario" name="usuario" required
+                       value="<?= htmlspecialchars($formData['usuario']) ?>">
             </div>
+            
             <div class="form-group">
                 <label for="password">Contraseña:</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" required minlength="3">
             </div>
+            
             <div class="form-group">
                 <label for="confirmPassword">Confirmar Contraseña:</label>
-                <input type="password" id="confirmPassword" name="confirmPassword" required>
+                <input type="password" id="confirmPassword" name="confirmPassword" required minlength="3">
             </div>
-            <div class="form-group">
-                <label for="role">Rol:</label>
-                <select id="role" name="role">
-                    <option value="3">Estudiante</option>
-                    <option value="2">Profesor</option>
-                </select>
-            </div>
+            
             <button type="submit" class="btn">Registrarse</button>
         </form>
+        
         <p>¿Ya tienes cuenta? <a href="<?= BASE_URL ?>pagina/login.php">Inicia sesión aquí</a></p>
     </main>
 
     <!-- Footer -->
     <?php include(__DIR__ . '/partials/footer.html'); ?>
-
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </body>
 </html>

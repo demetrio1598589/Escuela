@@ -1,9 +1,22 @@
 <?php
 require_once(__DIR__ . '/../../config/paths.php');
 require_once(__DIR__ . '/../../controlador/AuthController.php');
+require_once(__DIR__ . '/../../config/no_cache.php');
+require_once(__DIR__ . '/../../config/db.php');
 
 $auth = new AuthController();
 $auth->checkRole(1); // Solo admin
+
+$db = new Database();
+$conn = $db->connect();
+
+$query = "SELECT id, nombre, apellido, usuario, token, fecha_token 
+          FROM usuarios 
+          WHERE token IS NOT NULL OR fecha_token IS NOT NULL
+          ORDER BY fecha_token DESC";
+$stmt = $conn->prepare($query);
+$stmt->execute();
+$usuarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -43,24 +56,20 @@ $auth->checkRole(1); // Solo admin
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>Estudiante A</td>
-                        <td>abc123xyz</td>
-                        <td>01/10/2023</td>
-                        <td>Activa</td>
-                    </tr>
-                    <tr>
-                        <td>Estudiante B</td>
-                        <td>def456uvw</td>
-                        <td>15/10/2023</td>
-                        <td>Activa</td>
-                    </tr>
-                    <tr>
-                        <td>Estudiante C</td>
-                        <td>ghi789rst</td>
-                        <td>20/10/2023</td>
-                        <td>Usada</td>
-                    </tr>
+                    <?php if (empty($usuarios)): ?>
+                        <tr>
+                            <td colspan="4">No hay contraseñas temporales registradas</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($usuarios as $usuario): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($usuario['nombre'] . ' ' . $usuario['apellido']) ?></td>
+                                <td><?= $usuario['token'] ? htmlspecialchars($usuario['token']) : 'N/A' ?></td>
+                                <td><?= $usuario['fecha_token'] ? date('d/m/Y H:i', strtotime($usuario['fecha_token'])) : 'N/A' ?></td>
+                                <td><?= $usuario['token'] ? 'Activa' : 'Usada' ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
