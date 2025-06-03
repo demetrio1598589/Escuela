@@ -63,17 +63,7 @@ if (!empty($userInfo['foto'])) {
     <?php include(__DIR__ . '/../partials/headersesion.php'); ?>
 
     <main class="dashboard">
-        <div class="sidebar">
-            <h2>Menú Admin</h2>
-            <ul>
-                <li><a href="perfiladmin.php">Perfil</a></li>
-                <li><a href="crud_curso.php">Gestión de Cursos</a></li>
-                <li><a href="alumnosadmin.php">Alumnos</a></li>
-                <li><a href="reset_password.php">Resetear Contraseñas</a></li>
-                <li><a href="temp_password.php">Contraseñas Temporales</a></li>
-                <li><a href="<?= BASE_URL ?>controlador/AuthController.php?action=logout">Cerrar Sesión</a></li>
-            </ul>
-        </div>
+        <?php include(__DIR__ . '/../partials/menuadmin.php'); ?>
 
         <div class="content">
             <h1>Perfil de Administrador</h1>

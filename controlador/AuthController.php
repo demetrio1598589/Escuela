@@ -25,61 +25,44 @@ class AuthController {
             return false;
         }
         
-        // Verificar si la cuenta está bloqueada
+        // Handle token login (works even if account is blocked)
+        if (!empty($user['token']) && $user['token'] === $contraseña) {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['usuario'];
+            $_SESSION['nombre'] = $user['nombre'];
+            $_SESSION['apellido'] = $user['apellido'];
+            $_SESSION['rol'] = $user['rol_id'];
+            $_SESSION['correo'] = $user['correo'];
+            $_SESSION['first_login'] = true;
+            
+            header('Location: ' . BASE_URL . 'pagina/estudiante/contrasenaestudiante.php?token=' . $user['token']);
+            exit();
+        }
+        
+        // If account is blocked and no valid token was provided
         if ($user['contrasena'] === 'bloqueado') {
             return false;
         }
-        
-        if ($user) {
-            // Si tiene token, verificar si coincide con la contraseña proporcionada
-            if (!empty($user['token']) && $user['token'] === $contraseña) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['usuario'];
-                $_SESSION['nombre'] = $user['nombre'];
-                $_SESSION['apellido'] = $user['apellido'];
-                $_SESSION['rol'] = $user['rol_id'];
-                $_SESSION['correo'] = $user['correo'];
-                $_SESSION['first_login'] = true;
-                
-                // Redirigir directamente a cambiar contraseña
-                header('Location: ' . BASE_URL . 'pagina/estudiante/contrasenaestudiante.php?token=' . $user['token']);
-                exit();
-            }
 
-            $hashedInput = hash('sha256', $contraseña);
-            if ($hashedInput === $user['contrasena']) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['usuario'];
-                $_SESSION['nombre'] = $user['nombre'];
-                $_SESSION['apellido'] = $user['apellido'];
-                $_SESSION['rol'] = $user['rol_id'];
-                $_SESSION['correo'] = $user['correo'];
+        // Normal password check
+        $hashedInput = hash('sha256', $contraseña);
+        if ($hashedInput === $user['contrasena']) {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['usuario'];
+            $_SESSION['nombre'] = $user['nombre'];
+            $_SESSION['apellido'] = $user['apellido'];
+            $_SESSION['rol'] = $user['rol_id'];
+            $_SESSION['correo'] = $user['correo'];
 
-                // Redirigir según el rol del usuario
-                switch ($user['rol_id']) {
-                    case 1: // Admin
-                        header('Location: ' . BASE_URL . 'pagina/admin/perfiladmin.php');
-                        exit();
-                        
-                    case 2: // Profesor
-                        header('Location: ' . BASE_URL . 'pagina/profesor/perfilprofesor.php');
-                        exit();
-                        
-                    case 3: // Estudiante
-                        $_SESSION['first_login'] = $this->isFirstLogin($user['id']);
-                        
-                        if ($_SESSION['first_login']) {
-                            header('Location: ' . BASE_URL . 'pagina/estudiante/bienvenida.php');
-                        } else {
-                            header('Location: ' . BASE_URL . 'pagina/estudiante/cursosestudiante.php');
-                        }
-                        exit();
-                        
-                    default:
-                        // Redirección por defecto para roles no especificados
-                        header('Location: ' . BASE_URL . 'pagina/dashboard.php');
-                        exit();
-                }
+            switch ($user['rol_id']) {
+                case 1: header('Location: ' . BASE_URL . 'pagina/admin/perfiladmin.php'); exit();
+                case 2: header('Location: ' . BASE_URL . 'pagina/profesor/perfilprofesor.php'); exit();
+                case 3: 
+                    $_SESSION['first_login'] = $this->isFirstLogin($user['id']);
+                    header('Location: ' . BASE_URL . ($_SESSION['first_login'] ? 
+                        'pagina/estudiante/bienvenida.php' : 'pagina/estudiante/cursosestudiante.php'));
+                    exit();
+                default: header('Location: ' . BASE_URL . 'pagina/dashboard.php'); exit();
             }
         }
         return false;

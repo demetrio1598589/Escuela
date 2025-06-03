@@ -9,110 +9,159 @@ $db = $database->connect();
 $userModel = new User($db);
 
 $auth = new AuthController();
-// Si ya está logueado, redirigir según rol
 if ($auth->isLoggedIn()) {
     switch ($_SESSION['rol']) {
-        case 1: // Admin
-            header('Location: ' . BASE_URL . 'pagina/admin/perfiladmin.php');
-            break;
-        case 2: // Profesor
-            header('Location: ' . BASE_URL . 'pagina/profesor/perfilprofesor.php');
-            break;
-        case 3: // Estudiante
-            if ($_SESSION['first_login']) {
-                header('Location: ' . BASE_URL . 'pagina/estudiante/bienvenida.php');
-            } else {
-                header('Location: ' . BASE_URL . 'pagina/estudiante/cursosestudiante.php');
-            }
+        case 1: header('Location: ' . BASE_URL . 'pagina/admin/perfiladmin.php'); break;
+        case 2: header('Location: ' . BASE_URL . 'pagina/profesor/perfilprofesor.php'); break;
+        case 3: 
+            header('Location: ' . BASE_URL . ($_SESSION['first_login'] ? 
+                'pagina/estudiante/bienvenida.php' : 'pagina/estudiante/cursosestudiante.php'));
             break;
     }
     exit();
 }
 
-// Inicializar contadores de intentos fallidos
+// Initialize session counters
 if (!isset($_SESSION['login_attempts'])) {
-    $_SESSION['login_attempts'] = 0;
-    $_SESSION['last_failed_attempt'] = 0;
-    $_SESSION['block_count'] = []; // Para llevar cuenta de bloqueos por usuario
+    $_SESSION['login_attempts'] = [];
+    $_SESSION['last_failed_attempt'] = [];
+    $_SESSION['block_count'] = [];
+    $_SESSION['in_wait'] = false;
+    $_SESSION['wait_start'] = 0;
+    $_SESSION['wait_user'] = '';
 }
 
 $error = '';
-$showCaptcha = ($_SESSION['login_attempts'] >= 3);
+$currentUser = trim($_POST['username'] ?? '');
+$showCaptcha = false;
 $waitTime = 0;
 
-if ($showCaptcha) {
-    $currentTime = time();
-    $lastAttempt = $_SESSION['last_failed_attempt'];
-    $elapsed = $currentTime - $lastAttempt;
+// Check if user is in timeout from previous session
+if (isset($_SESSION['in_wait']) && $_SESSION['in_wait'] && 
+    isset($_SESSION['wait_start']) && isset($_SESSION['wait_user'])) {
     
+    $elapsed = time() - $_SESSION['wait_start'];
     if ($elapsed < 20) {
-        $waitTime = 20 - $elapsed;
         $showCaptcha = true;
-        
-        // Incrementar contador de bloqueos para este usuario
-        if (isset($_POST['username'])) {
-            $username = $_POST['username'];
-            if (!isset($_SESSION['block_count'][$username])) {
-                $_SESSION['block_count'][$username] = 0;
-            }
-            $_SESSION['block_count'][$username]++;
-            
-            // Si es el segundo bloqueo, bloquear la cuenta
-            if ($_SESSION['block_count'][$username] >= 2) {
-                $userData = $userModel->getUserByUsername($username);
-                if ($userData) {
-                    $userModel->blockUser($userData['id']);
-                }
-            }
-        }
+        $waitTime = 20 - $elapsed;
+        $currentUser = $_SESSION['wait_user'];
     } else {
-        $_SESSION['login_attempts'] = 0;
-        $showCaptcha = false;
-        $error = '';
+        // Timeout completed
+        $_SESSION['in_wait'] = false;
+        $_SESSION['wait_start'] = 0;
+        $_SESSION['wait_user'] = '';
+    }
+}
+
+// Check if user is in timeout from current session
+if (!empty($currentUser) && isset($_SESSION['last_failed_attempt'][$currentUser])) {
+    $elapsed = time() - $_SESSION['last_failed_attempt'][$currentUser];
+    if ($_SESSION['login_attempts'][$currentUser] >= 3 && $elapsed < 20) {
+        $showCaptcha = true;
+        $waitTime = 20 - $elapsed;
+        
+        // Set session wait state
+        $_SESSION['in_wait'] = true;
+        $_SESSION['wait_start'] = $_SESSION['last_failed_attempt'][$currentUser];
+        $_SESSION['wait_user'] = $currentUser;
     }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $usuario = $_POST['username'] ?? '';
-    $contraseña = $_POST['password'] ?? '';
+    $usuario = $currentUser;
+    $contraseña = trim($_POST['password'] ?? '');
     
-    // Verificar si la cuenta está bloqueada
     $userData = $userModel->getUserByUsername($usuario);
-    if ($userData && $userData['contrasena'] === 'bloqueado') {
-        $error = 'Tu cuenta ha sido bloqueada. Por favor, contacta al administrador.';
-    } elseif ($showCaptcha && $waitTime > 0) {
-        echo '<script>$(document).ready(function() { showWaitMessage('.$waitTime.'); });</script>';
-    } else {
-        if ($auth->login($usuario, $contraseña)) {
-            // Resetear contadores al loguearse correctamente
-            $_SESSION['login_attempts'] = 0;
-            $_SESSION['last_failed_attempt'] = 0;
-            if (isset($_SESSION['block_count'][$usuario])) {
-                unset($_SESSION['block_count'][$usuario]);
+    
+    if ($userData !== false) {
+        // Handle blocked account
+        if ($userData['contrasena'] === 'bloqueado') {
+            if (!empty($userData['token']) && $userData['token'] === $contraseña) {
+                if ($auth->login($usuario, $contraseña)) {
+                    exit();
+                }
+            } else {
+                $error = 'Tu cuenta ha sido bloqueada. Por favor, contacta al administrador o usa tu token de recuperación.';
+                
+                // Initialize counters for this user if not set
+                if (!isset($_SESSION['login_attempts'][$usuario])) {
+                    $_SESSION['login_attempts'][$usuario] = 0;
+                }
+                
+                // Only increment attempts if not in wait state
+                if (!isset($_SESSION['in_wait']) || !$_SESSION['in_wait']) {
+                    $_SESSION['login_attempts'][$usuario]++;
+                    $_SESSION['last_failed_attempt'][$usuario] = time();
+                }
+                
+                $remaining_attempts = max(0, 3 - $_SESSION['login_attempts'][$usuario]);
+                if ($remaining_attempts > 0) {
+                    $error .= '<br>Intentos restantes: ' . $remaining_attempts;
+                }
+                
+                if ($_SESSION['login_attempts'][$usuario] >= 3) {
+                    $showCaptcha = true;
+                    $waitTime = 20;
+                    $_SESSION['in_wait'] = true;
+                    $_SESSION['wait_start'] = time();
+                    $_SESSION['wait_user'] = $usuario;
+                }
             }
-            
-            switch ($_SESSION['rol']) {
-                case 1: // Admin
-                    header('Location: ' . BASE_URL . 'pagina/admin/perfiladmin.php');
-                    break;
-                case 2: // Profesor
-                    header('Location: ' . BASE_URL . 'pagina/profesor/perfilprofesor.php');
-                    break;
-                case 3: // Estudiante
-                    header('Location: ' . BASE_URL . 'pagina/estudiante/perfilestudiante.php');
-                    break;
-            }
-            exit();
-        } else {
-            $error = 'Credenciales incorrectas. Intente nuevamente.';
-            $_SESSION['login_attempts']++;
-            $_SESSION['last_failed_attempt'] = time();
-            
-            if ($_SESSION['login_attempts'] >= 3) {
-                $showCaptcha = true;
-                $waitTime = 20;
+        } 
+        // Handle normal login
+        else {
+            if ($auth->login($usuario, $contraseña)) {
+                // Reset counters for ALL users on successful login
+                $_SESSION['login_attempts'] = [];
+                $_SESSION['last_failed_attempt'] = [];
+                $_SESSION['block_count'] = [];
+                $_SESSION['in_wait'] = false;
+                $_SESSION['wait_start'] = 0;
+                $_SESSION['wait_user'] = '';
+                exit();
+            } else {
+                // Initialize counters for this user if not set
+                if (!isset($_SESSION['login_attempts'][$usuario])) {
+                    $_SESSION['login_attempts'][$usuario] = 0;
+                    $_SESSION['block_count'][$usuario] = 0;
+                }
+                
+                // Only increment attempts if not in wait state
+                if (!isset($_SESSION['in_wait']) || !$_SESSION['in_wait']) {
+                    $_SESSION['login_attempts'][$usuario]++;
+                    $_SESSION['last_failed_attempt'][$usuario] = time();
+                }
+                
+                $remaining_attempts = max(0, 3 - $_SESSION['login_attempts'][$usuario]);
+                $error = 'Credenciales incorrectas. Intente nuevamente.';
+                
+                if ($remaining_attempts > 0) {
+                    $error .= '<br>Intentos restantes: ' . $remaining_attempts;
+                }
+                
+                if ($_SESSION['login_attempts'][$usuario] >= 3) {
+                    $showCaptcha = true;
+                    $waitTime = 20;
+                    $_SESSION['in_wait'] = true;
+                    $_SESSION['wait_start'] = time();
+                    $_SESSION['wait_user'] = $usuario;
+                    
+                    // Increment block count only when entering wait state
+                    $_SESSION['block_count'][$usuario]++;
+                    
+                    // Reset login attempts for the next cycle
+                    $_SESSION['login_attempts'][$usuario] = 0;
+                    
+                    // Block account if this is the second timeout
+                    if ($_SESSION['block_count'][$usuario] >= 2) {
+                        $userModel->blockUser($userData['id']);
+                        $error = 'Tu cuenta ha sido bloqueada por seguridad. Por favor, contacta al administrador.';
+                    }
+                }
             }
         }
+    } else {
+        $error = 'Credenciales incorrectas. Intente nuevamente.';
     }
 }
 ?>
@@ -128,30 +177,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Iniciar Sesión</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login_styles.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
+    <script>
+        // Prevent back button navigation
+        history.pushState(null, null, location.href);
+        window.onpopstate = function() {
+            history.go(1);
+        };
+    </script>
 </head>
 <body>
-    <!-- Header -->
     <?php include(__DIR__ . '/partials/header.php'); ?>
 
     <main class="login-container">
         <h1>Iniciar Sesión</h1>
-            <?php if ($error): ?>
-                <div class="alert error">
-                    <?php 
-                    if (isset($userData) && $userData['contrasena'] === 'bloqueado') {
-                        echo 'Tu cuenta ha sido bloqueada por seguridad. <br>Por favor, contacta al administrador para recuperar el acceso.';
-                    } else {
-                        echo $error;
-                    }
-                    ?>
-                </div>
-            <?php endif; ?>
+        <?php if ($error): ?>
+            <div class="alert error"><?= $error ?></div>
+        <?php endif; ?>
         
-        <div id="login-form-container">
+        <div id="login-form-container" <?= $showCaptcha ? 'style="display: none;"' : '' ?>>
             <form id="loginForm" method="POST" action="">
                 <div class="form-group">
                     <label for="username">Usuario:</label>
-                    <input type="text" id="username" name="username" required>
+                    <input type="text" id="username" name="username" value="<?= htmlspecialchars($currentUser) ?>" required>
                 </div>
                 <div class="form-group">
                     <label for="password">Contraseña:</label>
@@ -162,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p>¿No tienes cuenta? <a href="<?= BASE_URL ?>pagina/registrar.php">Regístrate aquí</a></p>
         </div>
         
-        <div id="wait-message" style="display: none;">
+        <div id="wait-message" style="<?= $showCaptcha ? '' : 'display: none;' ?>">
             <h3>Juega memorama mientras esperas</h3>
             <div class="stats">
                 <p>Juegos completados: <span id="games-completed">0</span></p>
@@ -172,40 +219,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             <h2>Demasiados intentos fallidos</h2>
             <div id="original-wait-message">
-                <p>Por seguridad, debes esperar <span id="countdown">30</span> segundos antes de intentar nuevamente.</p>
-                <div class="timer" id="timer">30</div>
+                <p>Por seguridad, debes esperar <span id="countdown"><?= $waitTime ?></span> segundos antes de intentar nuevamente.</p>
+                <div class="timer" id="timer"><?= $waitTime ?></div>
             </div>            
         </div>
     </main>
 
-    <!-- Footer -->
     <?php include(__DIR__ . '/partials/footer.html'); ?>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-    <script>        
-        let gamesCompleted = 0;
+    <script src="<?= BASE_URL ?>pagina/js/juego.js"></script>
+    <script>
         function showWaitMessage(waitSeconds) {
-            console.log("Mostrando mensaje de espera con", waitSeconds, "segundos");
             $('#login-form-container').hide();
             $('#wait-message').show();
             
-            // Iniciar audio de espera
             const waitAudio = document.getElementById('wait-audio');
             waitAudio.play().catch(e => console.log("No se pudo reproducir audio:", e));
             
-            // Inicializar contadores
-            $('#error-count').text('0');
-            $('#games-completed').text('0');
-            
-            initializeMemoryGame();
             startCountdown(waitSeconds);
-            
-            // Prevenir navegación hacia atrás
-            history.pushState(null, null, location.href);
-            window.onpopstate = function() {
-                history.go(1);
-            };
         }
 
         function startCountdown(seconds) {
@@ -213,9 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const timerElement = $('#timer');
             const countdownElement = $('#countdown');
             const originalMessage = $('#original-wait-message');
-            const waitAudio = document.getElementById('wait-audio');
             
-            // Mostrar el valor inicial
             timerElement.text(counter);
             countdownElement.text(counter);
             
@@ -227,148 +257,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     countdownElement.text(counter);
                 } else {
                     clearInterval(countdownInterval);
-                    // Detener audio de espera
-                    waitAudio.pause();
-                    waitAudio.currentTime = 0;
-                    
-                    // Reemplazar completamente el mensaje original
                     originalMessage.replaceWith(`
                         <div class="countdown-complete">
                             <p>Tiempo completado! Puedes intentar iniciar sesión nuevamente.</p>
-                            <button onclick="window.location.reload()" class="btn">Volver a Login</button>
+                            <button onclick="window.location.href='<?= BASE_URL ?>pagina/login.php'" class="btn">Volver a Login</button>
                             <p>Revisa tus credenciales antes de continuar.</p>
                         </div>
                     `);
+                    
+                    // Update session state via AJAX
+                    $.post('<?= BASE_URL ?>controlador/clear_wait.php', {clear_wait: true});
                 }
             }, 1000);
         }
 
-        function initializeMemoryGame() {
-            const symbols = ['🐶', '🐱', '🐭', '🐰', '🦊', '🐼'];
-            const cards = [...symbols, ...symbols]; // Duplicar para hacer pares
-            
-            // Barajar las cartas
-            for (let i = cards.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [cards[i], cards[j]] = [cards[j], cards[i]];
-            }
-            
-            // Crear el tablero
-            const gameContainer = $('#memory-game-container');
-            gameContainer.empty();
-            
-            let flippedCards = [];
-            let matchedPairs = 0;
-            let errorCount = 0;
-            let canFlip = true;
-            
-            cards.forEach((symbol, index) => {
-                const card = $('<div>').addClass('memory-card').attr('data-index', index);
-                card.text('?').attr('data-symbol', symbol);
-                
-                card.click(function() {
-                    if (!canFlip || $(this).hasClass('flipped') || $(this).hasClass('matched')) {
-                        return;
-                    }
-                    
-                    // Voltear la carta
-                    $(this).addClass('flipped').text($(this).data('symbol'));
-                    flippedCards.push($(this));
-                    
-                    // Cuando tenemos 2 cartas volteadas
-                    if (flippedCards.length === 2) {
-                        canFlip = false;
-                        const card1 = flippedCards[0];
-                        const card2 = flippedCards[1];
-                        
-                        if (card1.data('symbol') === card2.data('symbol')) {
-                            // Es un par - mantenerlas visibles
-                            card1.addClass('matched');
-                            card2.addClass('matched');
-                            flippedCards = [];
-                            matchedPairs++;
-                            canFlip = true;
-                            
-                            // Verificar si se completó el juego
-                            if (matchedPairs === symbols.length) {
-                                gamesCompleted++;
-                                $('#games-completed').text(gamesCompleted);
-                                setTimeout(() => {
-                                    initializeMemoryGame(); // Reiniciar juego
-                                }, 500);
-                            }
-                        } else {
-                            // No es un par - incrementar contador de errores
-                            errorCount++;
-                            $('#error-count').text(errorCount);
-                            
-                            // Esperar 0.5 segundos antes de voltear las cartas
-                            setTimeout(() => {
-                                card1.removeClass('flipped').text('?');
-                                card2.removeClass('flipped').text('?');
-                                flippedCards = [];
-                                canFlip = true;
-                            }, 500);
-                        }
-                    }
-                });
-                
-                gameContainer.append(card);
-            });
-        }
-
-        // Iniciar el juego cuando el documento esté listo
         $(document).ready(function() {
-            initializeMemoryGame();
-            
             <?php if ($showCaptcha && $waitTime > 0): ?>
                 showWaitMessage(<?= $waitTime ?>);
             <?php endif; ?>
         });
-
-        function startCountdown(seconds) {
-            let counter = seconds;
-            const timerElement = $('#timer');
-            const countdownElement = $('#countdown');
-            const originalMessage = $('#original-wait-message');
-            
-            // Mostrar el valor inicial
-            timerElement.text(counter);
-            countdownElement.text(counter);
-            
-            const countdownInterval = setInterval(() => {
-                counter--;
-                
-                if (counter > 0) {
-                    timerElement.text(counter);
-                    countdownElement.text(counter);
-                } else {
-                    clearInterval(countdownInterval);
-                    // Reemplazar completamente el mensaje original
-                    originalMessage.replaceWith(`
-                        <div class="countdown-complete">
-                            <p>Tiempo completado! Puedes intentar iniciar sesión nuevamente.</p>
-                            <button onclick="window.location.reload()" class="btn">Volver a Login</button>
-                            <p>Revisa tus credenciales antes de continuar.</p>
-                        </div>
-                    `);
-                }
-            }, 1000);
-        }
-        
-        function toggleSound() {
-            alert('Funcionalidad de sonido será implementada próximamente');
-        }
-        $(document).on('click', '.btn[onclick*="reload"]', function() {
-            const waitAudio = document.getElementById('wait-audio');
-            waitAudio.pause();
-            waitAudio.currentTime = 0;
-            window.location.reload();
-        });
     </script>
     <audio id="wait-audio" loop>
-    <source src="<?= BASE_URL ?>pagina/audio/the-return-of-the-8-bit-era-301292.mp3" type="audio/mpeg">
-    Tu navegador no soporta el elemento de audio.
-</audio>
+        <source src="<?= BASE_URL ?>pagina/audio/the-return-of-the-8-bit-era-301292.mp3" type="audio/mpeg">
+        Tu navegador no soporta el elemento de audio.
+    </audio>
 </body>
 </html>

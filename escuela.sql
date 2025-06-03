@@ -5,7 +5,7 @@ CREATE TABLE roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(20) NOT NULL UNIQUE
 );
-INSERT INTO roles (nombre) VALUES ('admin'), ('profe'), ('estudiante');
+INSERT INTO roles (nombre) VALUES ('Administrador'), ('Profesor'), ('Estudiante');
 
 CREATE TABLE usuarios (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -102,7 +102,3 @@ VALUES
 ('Redes de Computadoras', 'Curso sobre protocolos, modelos OSI y configuración de redes.', 4),
 ('Sistemas Operativos', 'Curso sobre gestión de procesos, memoria y sistemas de archivos.', 3),
 ('Desarrollo de Aplicaciones Móviles', 'Curso sobre creación de apps para Android e iOS.', 3);
-
-
-est4531628
-pablito368615
