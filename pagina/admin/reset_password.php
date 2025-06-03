@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
     <style>
         .search-results {
-            max-height: 300px;
+            max-height: 1600px;
             overflow-y: auto;
             border: 1px solid #ddd;
             margin-top: 10px;
