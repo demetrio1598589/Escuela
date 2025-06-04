@@ -190,6 +190,100 @@ class AuthController {
         $stmt->bindParam(':id', $userId);
         return $stmt->execute();
     }
+    public function sendPasswordResetEmail($userId, $token) {
+        $user = $this->getUserById($userId);
+        if (!$user || empty($user['correo'])) {
+            return false;
+        }
+
+        $resetLink = BASE_URL . 'pagina/estudiante/contrasenaestudiante.php?token=' . urlencode($token);
+
+        // Configurar PHPMailer
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true); // Passing `true` enables exceptions
+
+        try {
+            // Configuración del servidor SMTP
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com'; // Cambiar por tu servidor SMTP
+            $mail->SMTPAuth = true;
+            $mail->Username = 'demetrio7000@gmail.com'; // Cambiar por tu email
+            $mail->Password = 'weln ldhi bwwn daoh'; // Cambiar por tu contraseña
+            $mail->SMTPSecure = 'tls';
+            $mail->Port = 587;
+            $mail->CharSet = 'UTF-8';
+
+            // Remitente y destinatario
+            $mail->setFrom('no-reply@escuela.com', 'Escuela');
+            $mail->addAddress($user['correo'], $user['nombre'] . ' ' . $user['apellido']);
+
+            // Contenido del email
+            $mail->isHTML(true);
+            $mail->Subject = 'Restablecimiento de contraseña';
+            
+            $mail->Body = "
+            <html>
+            <head>
+                <title>Restablecimiento de contraseña</title>
+            </head>
+            <body>
+                <h2>Restablecimiento de contraseña</h2>
+                <p>Hola {$user['nombre']} {$user['apellido']},</p>
+                <p>Se ha solicitado un restablecimiento de contraseña para tu cuenta.</p>
+                <p>Tu token de acceso es: <strong>{$token}</strong></p>
+                <p>Por favor, haz clic en el siguiente enlace para establecer una nueva contraseña:</p>
+                <p><a href='{$resetLink}'>{$resetLink}</a></p>
+                <p>Si no solicitaste este cambio, por favor ignora este correo.</p>
+            </body>
+            </html>
+            ";
+
+            // Enviar el correo
+            $mail->send();
+            
+            // Registrar en el log de depuración
+            $debug_content = "Email enviado a: ".$user['correo']."\n";
+            $debug_content .= "Asunto: Restablecimiento de contraseña\n";
+            $debug_content .= "Token: ".$token."\n";
+            $debug_content .= "Enlace: ".$resetLink."\n";
+            $debug_content .= "------\n";
+            file_put_contents('C:\xampp\htdocs\DEM\Escuela\mail_debug.log', $debug_content, FILE_APPEND);
+
+            return true;
+        } catch (Exception $e) {
+            // Registrar el error en el log
+            $error_content = "Error al enviar email a ".$user['correo'].": ".$mail->ErrorInfo."\n";
+            file_put_contents('C:\xampp\htdocs\DEM\Escuela\mail_error.log', $error_content, FILE_APPEND);
+            
+            return false;
+        }
+    }
+    // En AuthController.php, añadir este método
+    public function handlePasswordResetToken($token) {
+        $user = $this->getUserByToken($token);
+        
+        if (!$user) {
+            return false;
+        }
+        
+        // Verificar que el token no sea demasiado viejo (ej. 24 horas)
+        $tokenAge = strtotime('now') - strtotime($user['fecha_token']);
+        if ($tokenAge > 86400) { // 24 horas en segundos
+            return false;
+        }
+        
+        // Iniciar sesión para el usuario
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['username'] = $user['usuario'];
+        $_SESSION['nombre'] = $user['nombre'];
+        $_SESSION['apellido'] = $user['apellido'];
+        $_SESSION['rol'] = $user['rol_id'];
+        $_SESSION['correo'] = $user['correo'];
+        $_SESSION['first_login'] = true;
+        $_SESSION['password_reset'] = true; // Marcar que es un restablecimiento
+        
+        return true;
+    }
+
 
 }
 

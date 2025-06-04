@@ -4,6 +4,11 @@ require_once(__DIR__ . '/../../controlador/AuthController.php');
 require_once(__DIR__ . '/../../controlador/AdminController.php');
 require_once(__DIR__ . '/../../config/no_cache.php');
 
+//librerias
+require_once __DIR__.'/../../libraries/PHPMailer/src/PHPMailer.php';
+require_once __DIR__.'/../../libraries/PHPMailer/src/SMTP.php';
+require_once __DIR__.'/../../libraries/PHPMailer/src/Exception.php';
+
 $auth = new AuthController();
 $auth->checkRole(1); // Solo admin
 
@@ -50,19 +55,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bindParam(':id', $userId);
         
         if ($stmt->execute()) {
-            $success = "Token generado para " . htmlspecialchars($user['nombre'] . ' ' . $user['apellido']) . 
-                      ": <strong>$token</strong>";
+            // Enviar correo con el token
+            $emailSent = $auth->sendPasswordResetEmail($userId, $token);
+            
+            if ($emailSent) {
+                $success = "Token generado para " . htmlspecialchars($user['nombre'] . ' ' . $user['apellido']) . 
+                        " y enviado por correo: <strong>$token</strong>";
+            } else {
+                $success = "Token generado para " . htmlspecialchars($user['nombre'] . ' ' . $user['apellido']) . 
+                        ": <strong>$token</strong> (pero no se pudo enviar el correo)";
+            }
+            
             // Refresh the user list
             $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, r.nombre as rol 
-                     FROM usuarios u
-                     JOIN roles r ON u.rol_id = r.id
-                     WHERE u.rol_id IN (2, 3)";
+                    FROM usuarios u
+                    JOIN roles r ON u.rol_id = r.id
+                    WHERE u.rol_id IN (2, 3)";
             $stmt = $db->prepare($query);
             $stmt->execute();
             $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } else {
             $error = "Error al generar el token";
         }
+
     }
 }
 ?>
