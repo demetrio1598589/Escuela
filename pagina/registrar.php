@@ -3,6 +3,11 @@ require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
 require_once(__DIR__ . '/../config/no_cache.php');
 
+//librerias
+require_once __DIR__.'/../libraries/PHPMailer/src/PHPMailer.php';
+require_once __DIR__.'/../libraries/PHPMailer/src/SMTP.php';
+require_once __DIR__.'/../libraries/PHPMailer/src/Exception.php';
+
 $error = '';
 $success = '';
 $formData = [
@@ -17,30 +22,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'nombre' => trim($_POST['nombre'] ?? ''),
         'apellido' => trim($_POST['apellido'] ?? ''),
         'usuario' => trim($_POST['usuario'] ?? ''),
-        'email' => trim($_POST['email'] ?? ''),
-        'password' => $_POST['password'] ?? '',
-        'confirmPassword' => $_POST['confirmPassword'] ?? ''
+        'email' => trim($_POST['email'] ?? '')
     ];
 
     try {
-        // Validación de confirmación de contraseña
-        if ($formData['password'] !== $formData['confirmPassword']) {
-            throw new Exception("Las contraseñas no coinciden");
-        }
-
         $auth = new AuthController();
         
-        $userId = $auth->register(
+        // Generar token único
+        $token = bin2hex(random_bytes(32));
+        
+        // Crear usuario temporal (sin contraseña)
+        $userId = $auth->createTempUser(
             $formData['nombre'],
             $formData['apellido'],
             $formData['usuario'],
-            $formData['password'],
-            $formData['email']
+            $formData['email'],
+            $token
         );
         
-        // Redirigir directamente a bienvenida.php después del registro exitoso
-        header('Location: ' . BASE_URL . 'pagina/estudiante/bienvenida.php');
-        exit();
+        // Enviar correo con enlace para completar registro
+        $completeLink = BASE_URL . 'pagina/completarregistro.php?token=' . urlencode($token);
+        
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com';
+            $mail->SMTPAuth = true;
+            $mail->Username = 'demetrio7000@gmail.com';
+            $mail->Password = 'weln ldhi bwwn daoh';
+            $mail->SMTPSecure = 'tls';
+            $mail->Port = 587;
+            $mail->CharSet = 'UTF-8';
+
+            $mail->setFrom('no-reply@escuela.com', 'Escuela');
+            $mail->addAddress($formData['email'], $formData['nombre'] . ' ' . $formData['apellido']);
+
+            $mail->isHTML(true);
+            $mail->Subject = 'Completa tu registro';
+            
+            $mail->Body = "
+            <html>
+            <head>
+                <title>Completa tu registro</title>
+            </head>
+            <body>
+                <h2>¡Ya casi terminas!</h2>
+                <p>Hola {$formData['nombre']} {$formData['apellido']},</p>
+                <p>Gracias por registrarte. Por favor, haz clic en el siguiente enlace para completar tu registro:</p>
+                <p><a href='{$completeLink}'>{$completeLink}</a></p>
+                <p>Datos ingresados:</p>
+                <ul>
+                    <li>Usuario: {$formData['usuario']}</li>
+                    <li>Email: {$formData['email']}</li>
+                </ul>
+                <p>Si no solicitaste este registro, por favor ignora este correo.</p>
+            </body>
+            </html>
+            ";
+
+            $mail->send();
+            $success = "Se ha enviado un correo a {$formData['email']} con instrucciones para completar tu registro.";
+        } catch (Exception $e) {
+            throw new Exception("Error al enviar el correo de confirmación. Por favor intente más tarde.");
+        }
         
     } catch (Exception $e) {
         $error = $e->getMessage();
@@ -71,6 +115,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="alert error"><?= htmlspecialchars($error) ?></div>
         <?php endif; ?>
         
+        <?php if ($success): ?>
+            <div class="alert success"><?= htmlspecialchars($success) ?></div>
+        <?php endif; ?>
+        
         <form method="POST" action="">
             <div class="form-group">
                 <label for="nombre">Nombre:</label>
@@ -94,16 +142,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label for="usuario">Usuario:</label>
                 <input type="text" id="usuario" name="usuario" required
                        value="<?= htmlspecialchars($formData['usuario']) ?>">
-            </div>
-            
-            <div class="form-group">
-                <label for="password">Contraseña:</label>
-                <input type="password" id="password" name="password" required minlength="3">
-            </div>
-            
-            <div class="form-group">
-                <label for="confirmPassword">Confirmar Contraseña:</label>
-                <input type="password" id="confirmPassword" name="confirmPassword" required minlength="3">
             </div>
             
             <button type="submit" class="btn">Registrarse</button>

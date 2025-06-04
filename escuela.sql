@@ -22,6 +22,18 @@ CREATE TABLE usuarios (
     FOREIGN KEY (rol_id) REFERENCES roles(id)
 );
 
+CREATE TABLE usuarios_temp (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    apellido VARCHAR(100) NOT NULL,
+    usuario VARCHAR(50) NOT NULL,
+    correo VARCHAR(100) NOT NULL,
+    token VARCHAR(64) NOT NULL,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (usuario),
+    UNIQUE KEY (correo)
+);
+
 CREATE TABLE cursos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,

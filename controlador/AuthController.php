@@ -109,6 +109,91 @@ class AuthController {
         }
     }
 
+    public function createTempUser($nombre, $apellido, $usuario, $email, $token) {
+        try {
+            // Validación básica
+            if (empty($nombre) || empty($apellido) || empty($usuario) || empty($email)) {
+                throw new Exception("Todos los campos son requeridos");
+            }
+
+            // Verificar si el usuario o correo ya existen (en usuarios o usuarios_temp)
+            if ($this->userModel->checkExistingUser($usuario, $email)) {
+                throw new Exception("El usuario o correo electrónico ya están registrados");
+            }
+
+            // Crear el usuario temporal
+            $database = new Database();
+            $db = $database->connect();
+            $query = "INSERT INTO usuarios_temp 
+                    (nombre, apellido, usuario, correo, token) 
+                    VALUES (:nombre, :apellido, :usuario, :correo, :token)";
+            $stmt = $db->prepare($query);
+
+            $stmt->bindParam(':nombre', $nombre);
+            $stmt->bindParam(':apellido', $apellido);
+            $stmt->bindParam(':usuario', $usuario);
+            $stmt->bindParam(':correo', $email);
+            $stmt->bindParam(':token', $token);
+
+            if ($stmt->execute()) {
+                return $db->lastInsertId();
+            }
+            
+            throw new Exception("Error al crear usuario temporal");
+            
+        } catch (PDOException $e) {
+            if ($e->errorInfo[1] == 1062) {
+                throw new Exception("El usuario o correo electrónico ya están registrados");
+            }
+            throw new Exception("Error técnico al registrar. Por favor intente más tarde.");
+        }
+    }
+
+    public function completeRegistration($tempUserId, $password) {
+        try {
+            // Obtener datos del usuario temporal
+            $database = new Database();
+            $db = $database->connect();
+            $query = "SELECT * FROM usuarios_temp WHERE id = :id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':id', $tempUserId);
+            $stmt->execute();
+            $tempUser = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$tempUser) {
+                throw new Exception("Usuario temporal no encontrado");
+            }
+            
+            // Hashear la contraseña
+            $hashedPassword = hash('sha256', $password);
+            
+            // Crear usuario real
+            $userId = $this->userModel->createUser(
+                $tempUser['nombre'],
+                $tempUser['apellido'],
+                $tempUser['usuario'],
+                $hashedPassword,
+                $tempUser['correo'],
+                3 // Rol de estudiante
+            );
+            
+            if (!$userId) {
+                throw new Exception("Error al completar el registro");
+            }
+            
+            // Eliminar usuario temporal
+            $query = "DELETE FROM usuarios_temp WHERE id = :id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':id', $tempUserId);
+            $stmt->execute();
+            
+            return $userId;
+            
+        } catch (Exception $e) {
+            throw new Exception("Error al completar el registro: " . $e->getMessage());
+        }
+    }
+
     public function logout() {
         // Limpiar todas las variables de sesión
         $_SESSION = array();

@@ -63,16 +63,22 @@ class User {
     }
 
     public function checkExistingUser($username, $email) {
-        $query = "SELECT COUNT(*) as count FROM {$this->table} 
-                 WHERE usuario = :usuario OR correo = :correo";
+        $query = "SELECT COUNT(*) as count FROM usuarios 
+                WHERE usuario = :usuario OR correo = :correo
+                UNION
+                SELECT COUNT(*) as count FROM usuarios_temp
+                WHERE usuario = :usuario OR correo = :correo";
         $stmt = $this->conn->prepare($query);
         
         $stmt->bindParam(':usuario', $username);
         $stmt->bindParam(':correo', $email);
         
         if ($stmt->execute()) {
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            return ($result['count'] > 0);
+            $count = 0;
+            while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $count += $result['count'];
+            }
+            return ($count > 0);
         }
         
         return false;
@@ -192,5 +198,6 @@ class User {
         $stmt->bindParam(':id', $userId);
         return $stmt->execute();
     }
+    
 }
 ?>
