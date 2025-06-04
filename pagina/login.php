@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     exit();
                 }
             } else {
-                $error = 'Tu cuenta ha sido bloqueada. Por favor, contacta al administrador o usa tu token de recuperación.';
+                $error = 'Tu cuenta ha sido bloqueada. Por favor, Envíanos un correo para recuperar o visita al administrador por un token.';
                 
                 // Initialize counters for this user if not set
                 if (!isset($_SESSION['login_attempts'][$usuario])) {
@@ -206,6 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <button type="submit" class="btn">Ingresar</button>
             </form>
+            <p><a href="<?= BASE_URL ?>pagina/solicitartoken.php" class="forgot-password">¿Olvidaste tu contraseña?</a></p>
             <p>¿No tienes cuenta? <a href="<?= BASE_URL ?>pagina/registrar.php">Regístrate aquí</a></p>
         </div>
         

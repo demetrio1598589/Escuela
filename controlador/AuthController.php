@@ -165,7 +165,7 @@ class AuthController {
     public function getUserByToken($token) {
         $database = new Database();
         $db = $database->connect();
-        $query = "SELECT * FROM usuarios WHERE token = :token";
+        $query = "SELECT * FROM usuarios WHERE token = :token AND fecha_token >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
         $stmt = $db->prepare($query);
         $stmt->bindParam(':token', $token);
         $stmt->execute();
@@ -196,7 +196,7 @@ class AuthController {
             return false;
         }
 
-        $resetLink = BASE_URL . 'pagina/estudiante/contrasenaestudiante.php?token=' . urlencode($token);
+        $resetLink = BASE_URL . 'pagina/restablecimiento.php?token=' . urlencode($token);
 
         // Configurar PHPMailer
         $mail = new PHPMailer\PHPMailer\PHPMailer(true); // Passing `true` enables exceptions
@@ -256,35 +256,103 @@ class AuthController {
             
             return false;
         }
-    }
-    // En AuthController.php, añadir este método
-    public function handlePasswordResetToken($token) {
-        $user = $this->getUserByToken($token);
+    } 
+    public function sendRecoveryEmail($email) {
+        // Buscar usuario por email
+        $database = new Database();
+        $db = $database->connect();
+        $query = "SELECT id, nombre, apellido, usuario FROM usuarios WHERE correo = :email";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':email', $email);
+        $stmt->execute();
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user) {
+            // No revelar que el email no existe por seguridad
+            error_log("Intento de recuperación para email no registrado: $email");
+            return true; // Devolver true igualmente por seguridad
+        }
+        
+        // Generar token: username + 6 dígitos aleatorios
+        $randomDigits = mt_rand(100000, 999999);
+        $token = $user['usuario'] . $randomDigits;
+        
+        // Actualizar el token en la base de datos
+        $query = "UPDATE usuarios SET token = :token, fecha_token = NOW() WHERE id = :id";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':token', $token);
+        $stmt->bindParam(':id', $user['id']);
+        
+        if (!$stmt->execute()) {
+            error_log("Error al actualizar token para usuario ID: " . $user['id']);
             return false;
         }
         
-        // Verificar que el token no sea demasiado viejo (ej. 24 horas)
-        $tokenAge = strtotime('now') - strtotime($user['fecha_token']);
-        if ($tokenAge > 86400) { // 24 horas en segundos
+        // Enviar correo con el token
+        $resetLink = BASE_URL . 'pagina/restablecimiento.php?token=' . urlencode($token);
+        
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        
+        try {
+            // Configuración SMTP (usando la misma que ya tienes)
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com';
+            $mail->SMTPAuth = true;
+            $mail->Username = 'demetrio7000@gmail.com';
+            $mail->Password = 'weln ldhi bwwn daoh';
+            $mail->SMTPSecure = 'tls';
+            $mail->Port = 587;
+            $mail->CharSet = 'UTF-8';
+
+            // Remitente y destinatario
+            $mail->setFrom('no-reply@escuela.com', 'Soporte Escuela');
+            $mail->addAddress($email, $user['nombre'] . ' ' . $user['apellido']);
+
+            // Contenido del email
+            $mail->isHTML(true);
+            $mail->Subject = 'Restablecimiento de contraseña';
+            
+            $mail->Body = "
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; }
+                    .button {
+                        display: inline-block;
+                        padding: 10px 20px;
+                        background: #4CAF50;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 4px;
+                    }
+                </style>
+            </head>
+            <body>
+                <h2>Restablecer tu contraseña</h2>
+                <p>Hola {$user['nombre']},</p>
+                <p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta.</p>
+                <p>Por favor, haz clic en el siguiente botón para continuar:</p>
+                <p><a href='{$resetLink}' class='button'>Restablecer contraseña</a></p>
+                <p>Si no solicitaste este cambio, puedes ignorar este mensaje.</p>
+                <p>Este enlace expirará en 24 horas.</p>
+            </body>
+            </html>
+            ";
+
+            // Versión alternativa sin HTML
+            $mail->AltBody = "Hola {$user['nombre']},\n\n" .
+                            "Para restablecer tu contraseña, visita este enlace:\n" .
+                            "{$resetLink}\n\n" .
+                            "Si no solicitaste este cambio, ignora este mensaje.\n\n" .
+                            "Este enlace expirará en 24 horas.";
+
+            $mail->send();
+            return true;
+        } catch (Exception $e) {
+            error_log("Error al enviar email de recuperación a $email: " . $mail->ErrorInfo);
             return false;
         }
-        
-        // Iniciar sesión para el usuario
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['usuario'];
-        $_SESSION['nombre'] = $user['nombre'];
-        $_SESSION['apellido'] = $user['apellido'];
-        $_SESSION['rol'] = $user['rol_id'];
-        $_SESSION['correo'] = $user['correo'];
-        $_SESSION['first_login'] = true;
-        $_SESSION['password_reset'] = true; // Marcar que es un restablecimiento
-        
-        return true;
     }
-
-
 }
 
 // Manejar acciones desde URL
