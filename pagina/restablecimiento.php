@@ -3,6 +3,11 @@ require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
 require_once(__DIR__ . '/../config/no_cache.php');
 
+// Iniciar sesión si no está iniciada
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 $auth = new AuthController();
 $error = '';
 $success = '';
@@ -13,7 +18,6 @@ if (isset($_GET['token'])) {
     $token = $_GET['token'];
     $userData = $auth->getUserByToken($token);
     
-    // Obtener información del usuario asociado al token (nuevo esquema)
     if (!$userData) {
         $error = "El enlace de recuperación no es válido o ha expirado";
     } else {
@@ -83,18 +87,12 @@ if (isset($_GET['token'])) {
                 // Confirmar transacción
                 $db->commit();
                 
-                // Generar nueva sesión segura
-                session_regenerate_id(true);
-                $newSessionId = session_id();
+                // Limpiar cualquier sesión existente
+                session_unset();
+                session_destroy();
                 
-                // Actualizar session_id en la base de datos
-                $query = "UPDATE usuarios SET 
-                         session_id = :session_id 
-                         WHERE id = :id";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(':session_id', $newSessionId);
-                $stmt->bindParam(':id', $userData['id']);
-                $stmt->execute();
+                // Iniciar una nueva sesión
+                session_start();
                 
                 // Establecer datos de sesión
                 $_SESSION['user_id'] = $userData['id'];
@@ -102,8 +100,18 @@ if (isset($_GET['token'])) {
                 $_SESSION['nombre'] = $userData['nombre'];
                 $_SESSION['apellido'] = $userData['apellido'];
                 $_SESSION['rol'] = $userData['rol_id'];
-                $_SESSION['current_session_id'] = $newSessionId;
+                $_SESSION['correo'] = $userData['correo'];
+                $_SESSION['current_session_id'] = session_id();
                 $_SESSION['password_changed'] = true;
+                
+                // Actualizar session_id en la base de datos
+                $query = "UPDATE usuarios SET 
+                         session_id = :session_id 
+                         WHERE id = :id";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(':session_id', $_SESSION['current_session_id']);
+                $stmt->bindParam(':id', $userData['id']);
+                $stmt->execute();
                 
                 // Redirigir según el rol
                 $redirectUrl = BASE_URL . 'pagina/';
