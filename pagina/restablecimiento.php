@@ -139,6 +139,7 @@ if (isset($_GET['token'])) {
     header("Location: " . BASE_URL . "pagina/index.php");
     exit();
 }
+
 ?>
 
 <!DOCTYPE html>
