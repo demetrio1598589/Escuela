@@ -82,12 +82,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $mail->send();
             $success = "Se ha enviado un correo a {$formData['email']} con instrucciones para completar tu registro.";
+            
+            // Limpiar los datos del formulario después de un registro exitoso
+            $formData = [
+                'nombre' => '',
+                'apellido' => '',
+                'usuario' => '',
+                'email' => ''
+            ];
         } catch (Exception $e) {
             throw new Exception("Error al enviar el correo de confirmación. Por favor intente más tarde.");
         }
         
     } catch (Exception $e) {
         $error = $e->getMessage();
+        // Mantener los datos del formulario para que el usuario pueda corregirlos
     }
 }
 ?>
@@ -103,6 +112,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Registro de Estudiante</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login_styles.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
+    <script>
+        // Función para limpiar el formulario cuando se muestra el mensaje de éxito
+        function clearFormOnSuccess() {
+            const successMessage = document.querySelector('.alert.success');
+            if (successMessage) {
+                document.getElementById('nombre').value = '';
+                document.getElementById('apellido').value = '';
+                document.getElementById('email').value = '';
+                document.getElementById('usuario').value = '';
+            }
+        }
+        
+        // Ejecutar cuando se cargue la página
+        document.addEventListener('DOMContentLoaded', clearFormOnSuccess);
+    </script>
 </head>
 <body>
     <!-- Header -->
@@ -119,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="alert success"><?= htmlspecialchars($success) ?></div>
         <?php endif; ?>
         
-        <form method="POST" action="">
+        <form method="POST" action="" id="registerForm">
             <div class="form-group">
                 <label for="nombre">Nombre:</label>
                 <input type="text" id="nombre" name="nombre" required

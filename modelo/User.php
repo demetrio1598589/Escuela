@@ -257,5 +257,16 @@ class User {
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+    public function getAllTokens() {
+        $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, r.nombre as rol, 
+                t.token, t.fecha_token, t.usado
+                FROM usuarios u
+                JOIN roles r ON u.rol_id = r.id
+                JOIN tokens t ON u.id = t.usuario_id
+                ORDER BY t.fecha_token DESC";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }
 ?>

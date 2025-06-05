@@ -22,7 +22,7 @@ $userModel = new User($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
     $searchTerm = $_POST['search'];
-    $usuarios = $userModel->getActiveTokens(); // This will only get tokens from last 58 minutes
+    $usuarios = $userModel->getAllTokens(); // Cambiado a getAllTokens
     
     // Filter by search term
     if (!empty($searchTerm)) {
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
         });
     }
 } else {
-    $usuarios = $userModel->getActiveTokens();
+    $usuarios = $userModel->getAllTokens(); // Cambiado a getAllTokens
 }
 
 ?>
@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
         <?php include(__DIR__ . '/../partials/menuadmin.php'); ?>
 
         <div class="content">
-            <h1>Contraseñas Temporales Generadas</h1>
+            <h1>Historial de Tokens Temporales</h1>
 
             <form method="POST" class="search-form">
                 <div class="form-group">
@@ -128,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
                 <tbody>
                     <?php if (empty($usuarios)): ?>
                         <tr>
-                            <td colspan="5">No hay contraseñas temporales registradas</td>
+                            <td colspan="5">No hay tokens registrados</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($usuarios as $usuario): ?>
