@@ -91,6 +91,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cambiar Contraseña</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
+    <script>
+        // Mismo script de validación de contraseña que en completarregistro.php
+        function checkPasswordStrength(password) {
+            // Al menos 8 caracteres
+            if (strlen($password) < 8) return false;
+            
+            // Al menos 2 letras mayúsculas
+            if (preg_match_all('/[A-Z]/', $password) < 2) return false;
+            
+            // Al menos 2 letras minúsculas
+            if (preg_match_all('/[a-z]/', $password) < 2) return false;
+            
+            // Al menos 2 números
+            if (preg_match_all('/[0-9]/', $password) < 2) return false;
+            
+            // Al menos 2 caracteres especiales
+            if (preg_match_all('/[^A-Za-z0-9]/', $password) < 2) return false;
+            
+            return true;
+        }
+        function validatePasswords() {
+            const newPassword = document.getElementById('new_password').value;
+            const confirmPassword = document.getElementById('confirm_password').value;
+            const submitButton = document.querySelector('button[type="submit"]');
+
+            // Verificar fortaleza de contraseña
+            const isStrong = checkPasswordStrength(newPassword);
+
+            // Verificar coincidencia
+            const matchElement = document.getElementById('password-match');
+            if (newPassword && confirmPassword) {
+                if (newPassword === confirmPassword) {
+                    matchElement.textContent = 'Las contraseñas coinciden';
+                    matchElement.className = 'password-strength strong';
+                } else {
+                    matchElement.textContent = 'Las contraseñas no coinciden';
+                    matchElement.className = 'password-strength weak';
+                }
+            } else {
+                matchElement.textContent = '';
+            }
+
+            // Habilitar/deshabilitar botón
+            submitButton.disabled = !(isStrong && newPassword && confirmPassword && newPassword === confirmPassword);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('new_password').addEventListener('input', function() {
+                validatePasswords();
+            });
+
+            document.getElementById('confirm_password').addEventListener('input', function() {
+                validatePasswords();
+            });
+        });
+    </script>
 </head>
 <body>
     <!-- Header con sesión -->

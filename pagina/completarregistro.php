@@ -3,6 +3,13 @@ require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
 require_once(__DIR__ . '/../config/no_cache.php');
 
+// Iniciar sesión y cerrar cualquier sesión existente
+if (isset($_SESSION['user_id'])) {
+    session_unset();
+    session_destroy();
+    session_start(); // Reiniciar sesión limpia
+}
+
 $auth = new AuthController();
 $error = '';
 $success = '';
@@ -41,8 +48,8 @@ if (isset($_GET['token'])) {
                 throw new Exception("Las contraseñas no coinciden");
             }
             
-            if (strlen($password) < 6) {
-                throw new Exception("La contraseña debe tener al menos 6 caracteres");
+            if (strlen($password) < 8) {
+                throw new Exception("La contraseña debe tener al menos 8 caracteres");
             }
             
             // Completar el registro
@@ -51,19 +58,24 @@ if (isset($_GET['token'])) {
                 $password
             );
             
-            // Iniciar sesión automáticamente
+            if (!$userId) {
+                throw new Exception("Error al completar el registro");
+            }
+            
+            // Iniciar nueva sesión
             session_regenerate_id(true);
             $newSessionId = session_id();
 
             // Actualizar session_id en la base de datos
             $query = "UPDATE usuarios SET 
-                        session_id = :session_id 
-                        WHERE id = :id";
+                    session_id = :session_id 
+                    WHERE id = :id";
             $stmt = $db->prepare($query);
             $stmt->bindParam(':session_id', $newSessionId);
-            $stmt->bindParam(':id', $userData['id']);
+            $stmt->bindParam(':id', $userId);
             $stmt->execute();
 
+            // Establecer variables de sesión
             $_SESSION['user_id'] = $userId;
             $_SESSION['username'] = $userData['usuario'];
             $_SESSION['nombre'] = $userData['nombre'];
@@ -71,6 +83,7 @@ if (isset($_GET['token'])) {
             $_SESSION['rol'] = 3; // Rol de estudiante
             $_SESSION['correo'] = $userData['correo'];
             $_SESSION['first_login'] = true;
+            $_SESSION['current_session_id'] = $newSessionId;
             
             // Redirigir a bienvenida
             header('Location: ' . BASE_URL . 'pagina/estudiante/bienvenida.php');
@@ -85,6 +98,8 @@ if (isset($_GET['token'])) {
     header("Location: " . BASE_URL . "pagina/index.php");
     exit();
 }
+?>
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -119,7 +134,41 @@ if (isset($_GET['token'])) {
             color: #666;
             margin-bottom: 20px;
         }
+        .password-strength {
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+        .password-strength.weak {
+            color: red;
+        }
+        .password-strength.medium {
+            color: orange;
+        }
+        .password-strength.strong {
+            color: green;
+        }
+        .password-requirements {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .password-requirements ul {
+            margin: 5px 0 0 0;
+            padding-left: 20px;
+        }
+        .requirement {
+            color: #999;
+        }
+        .requirement.fulfilled {
+            color: green;
+        }
     </style>
+    <link rel="icon" href="<?= BASE_URL ?>pagina/img/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login.css">
+    <script src="<?= BASE_URL ?>pagina/js/validarclave.js"></script>
+    <link rel="icon" href="<?= BASE_URL ?>pagina/img/favicon.ico" type="image/x-icon">
 </head>
 <body>
     <!-- Header -->
@@ -141,23 +190,30 @@ if (isset($_GET['token'])) {
                     <p class="text-muted">Email: <?= htmlspecialchars($userData['correo']) ?></p>
                 </div>
                 
-                <div class="password-rules">
+                <div class="password-requirements">
                     <p><strong>Requisitos de contraseña:</strong></p>
                     <ul>
-                        <li>Mínimo 6 caracteres</li>
-                        <li>No usar contraseñas obvias</li>
+                        <li id="req-minLength" class="requirement">Mínimo 8 caracteres</li>
+                        <li id="req-hasUpper" class="requirement">Al menos 2 letras mayúsculas</li>
+                        <li id="req-hasLower" class="requirement">Al menos 2 letras minúsculas</li>
+                        <li id="req-hasNumber" class="requirement">Al menos 2 números</li>
+                        <li id="req-hasSpecial" class="requirement">Al menos 2 caracteres especiales</li>
                     </ul>
+                    <div id="password-strength" class="password-strength"></div>
+                    <div id="password-match" class="password-strength"></div>
                 </div>
                 
                 <form method="POST" action="">
                     <div class="form-group">
                         <label for="password">Contraseña:</label>
-                        <input type="password" id="password" name="password" required minlength="6">
+                        <input type="password" id="password" name="password" required 
+                            oninput="validatePasswords()">
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="confirmPassword">Confirmar Contraseña:</label>
-                        <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6">
+                        <input type="password" id="confirmPassword" name="confirmPassword" required 
+                            oninput="validatePasswords()">
                     </div>
                     
                     <div class="form-group">

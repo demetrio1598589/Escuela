@@ -161,7 +161,7 @@ class AuthController {
         
         return ($result['count'] == 0);
     }
-
+    // Registro de usuario
     public function register($nombre, $apellido, $usuario, $contraseña, $correo) {
         try {
             // Validación básica
@@ -210,9 +210,14 @@ class AuthController {
             }
 
             // Verificar si el usuario o correo ya existen (en usuarios o usuarios_temp)
-            if ($this->userModel->checkExistingUser($usuario, $email)) {
-                throw new Exception("El usuario o correo electrónico ya están registrados");
+            if ($this->checkUsernameExists($usuario)) {
+                throw new Exception("El nombre de usuario ya está en uso");
             }
+
+            if ($this->userModel->checkExistingUser('', $email)) {
+                throw new Exception("El correo electrónico ya está registrado");
+            }
+
 
             // Crear el usuario temporal
             $database = new Database();
@@ -243,6 +248,10 @@ class AuthController {
     }
     public function completeRegistration($tempUserId, $password) {
         try {
+            // Validar contraseña segura
+            if (!$this->isStrongPassword($password)) {
+                throw new Exception("La contraseña no cumple con los requisitos de seguridad");
+            }
             // Obtener datos del usuario temporal
             $database = new Database();
             $db = $database->connect();
@@ -284,6 +293,62 @@ class AuthController {
         } catch (Exception $e) {
             throw new Exception("Error al completar el registro: " . $e->getMessage());
         }
+    }
+    private function isStrongPassword($password) {
+        // Al menos 8 caracteres
+        if (strlen($password) < 8) return false;
+        
+        // Al menos 2 letras mayúsculas
+        if (preg_match_all('/[A-Z]/', $password) < 2) return false;
+        
+        // Al menos 2 letras minúsculas
+        if (preg_match_all('/[a-z]/', $password) < 2) return false;
+        
+        // Al menos 2 números
+        if (preg_match_all('/[0-9]/', $password) < 2) return false;
+        
+        // Al menos 2 caracteres especiales
+        if (preg_match_all('/[^A-Za-z0-9]/', $password) < 2) return false;
+        
+        return true;
+    }
+
+    public function checkUsernameExists($username) {
+        $database = new Database();
+        $db = $database->connect();
+        
+        // Verificar en usuarios normales y temporales
+        $query = "SELECT COUNT(*) as count FROM usuarios WHERE usuario = :usuario
+                UNION
+                SELECT COUNT(*) as count FROM usuarios_temp WHERE usuario = :usuario";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':usuario', $username);
+        $stmt->execute();
+        
+        $count = 0;
+        while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $count += $result['count'];
+        }
+        
+        return $count > 0;
+    }
+    public function generateUsernameSuggestions($nombre, $apellido) {
+        $sugerencias = [];
+        $base = strtolower(preg_replace('/\s+/', '', $nombre . $apellido));
+        $base = substr($base, 0, 15);
+
+        for ($i = 0; $i < 3; $i++) {
+            $rand = rand(100, 999);
+            if ($i === 0) {
+                $sugerencias[] = strtolower($nombre) . $rand;
+            } elseif ($i === 1) {
+                $sugerencias[] = strtolower($apellido) . $rand;
+            } else {
+                $sugerencias[] = substr(strtolower($nombre), 0, 2) . substr(strtolower($apellido), 0, 2) . $rand;
+            }
+        }
+
+        return $sugerencias;
     }
 
     public function logout($clearSessionId = true) {

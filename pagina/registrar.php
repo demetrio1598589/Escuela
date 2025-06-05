@@ -16,6 +16,30 @@ $formData = [
     'usuario' => '',
     'email' => ''
 ];
+$suggestedUsernames = [];
+
+// Verificar disponibilidad de usuario via AJAX
+if (isset($_GET['check_username']) && isset($_GET['username'])) {
+    header('Content-Type: application/json');
+    $auth = new AuthController();
+    $username = trim($_GET['username']);
+    $response = [
+        'available' => false,
+        'suggestions' => []
+    ];
+    
+    if (!$auth->checkUsernameExists($username)) {
+        $response['available'] = true;
+    } else {
+        // Generar sugerencias
+        $nombre = isset($_GET['nombre']) ? trim($_GET['nombre']) : '';
+        $apellido = isset($_GET['apellido']) ? trim($_GET['apellido']) : '';
+        $response['suggestions'] = $auth->generateUsernameSuggestions($nombre, $apellido);
+    }
+    
+    echo json_encode($response);
+    exit();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData = [
@@ -27,6 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         $auth = new AuthController();
+        
+        // Verificar si el usuario ya existe
+        if ($auth->checkUsernameExists($formData['usuario'])) {
+            // Generar sugerencias
+            $suggestedUsernames = $auth->generateUsernameSuggestions($formData['nombre'], $formData['apellido']);
+            throw new Exception("El nombre de usuario ya está en uso. Prueba con: " . implode(", ", $suggestedUsernames));
+        }
         
         // Generar token único
         $token = bin2hex(random_bytes(32));
@@ -112,21 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Registro de Estudiante</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login_styles.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
-    <script>
-        // Función para limpiar el formulario cuando se muestra el mensaje de éxito
-        function clearFormOnSuccess() {
-            const successMessage = document.querySelector('.alert.success');
-            if (successMessage) {
-                document.getElementById('nombre').value = '';
-                document.getElementById('apellido').value = '';
-                document.getElementById('email').value = '';
-                document.getElementById('usuario').value = '';
-            }
-        }
-        
-        // Ejecutar cuando se cargue la página
-        document.addEventListener('DOMContentLoaded', clearFormOnSuccess);
-    </script>
+    <script src="<?= BASE_URL ?>pagina/js/registrar.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
     <!-- Header -->
@@ -146,19 +164,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form method="POST" action="" id="registerForm">
             <div class="form-group">
                 <label for="nombre">Nombre:</label>
-                <input type="text" id="nombre" name="nombre" required
+                <input type="text" id="nombre" name="nombre" placeholder="Nombre" required
                        value="<?= htmlspecialchars($formData['nombre']) ?>">
             </div>
             
             <div class="form-group">
                 <label for="apellido">Apellido:</label>
-                <input type="text" id="apellido" name="apellido" required
+                <input type="text" id="apellido" name="apellido" placeholder="Apellido" required
                        value="<?= htmlspecialchars($formData['apellido']) ?>">
             </div>
             
             <div class="form-group">
                 <label for="email">Correo Electrónico:</label>
-                <input type="email" id="email" name="email" required
+                <input type="email" id="email" name="email" placeholder="correo@mail.com" required
                        value="<?= htmlspecialchars($formData['email']) ?>">
             </div>
             
@@ -166,10 +184,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label for="usuario">Usuario:</label>
                 <input type="text" id="usuario" name="usuario" required
                        value="<?= htmlspecialchars($formData['usuario']) ?>">
+                <div id="sugerencias" style="font-size: 0.9em; color: gray;"></div>
             </div>
             
             <button type="submit" class="btn">Registrarse</button>
         </form>
+        <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const nombre = document.getElementById('nombre');
+            const apellido = document.getElementById('apellido');
+            const usuario = document.getElementById('usuario');
+            const sugerenciasDiv = document.getElementById('sugerencias');
+
+            function generarUsuario(nombre, apellido) {
+                return (nombre + apellido).toLowerCase().replace(/\s+/g, '');
+            }
+
+            function verificar(username, nombreVal, apellidoVal) {
+                fetch(`registrar.php?check_username=1&username=${encodeURIComponent(username)}&nombre=${encodeURIComponent(nombreVal)}&apellido=${encodeURIComponent(apellidoVal)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.available) {
+                            sugerenciasDiv.innerHTML = `✅ Usuario sugerido disponible: <strong>${username}</strong>`;
+                        } else {
+                            const sugerencias = data.suggestions.map(s => `<li>${s}</li>`).join('');
+                            sugerenciasDiv.innerHTML = `❌ Usuario en uso. Prueba con:<ul>${sugerencias}</ul>`;
+                        }
+                    });
+            }
+
+            function actualizar() {
+                const nombreVal = nombre.value.trim();
+                const apellidoVal = apellido.value.trim();
+                if (nombreVal && apellidoVal) {
+                    const sugerido = generarUsuario(nombreVal, apellidoVal);
+                    usuario.value = sugerido;
+                    verificar(sugerido, nombreVal, apellidoVal);
+                }
+            }
+
+            nombre.addEventListener('blur', actualizar);
+            apellido.addEventListener('blur', actualizar);
+        });
+        </script>
         
         <p>¿Ya tienes cuenta? <a href="<?= BASE_URL ?>pagina/login.php">Inicia sesión aquí</a></p>
     </main>
