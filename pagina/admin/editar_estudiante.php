@@ -6,6 +6,10 @@ require_once(__DIR__ . '/../../config/no_cache.php');
 require_once(__DIR__ . '/../../modelo/User.php');
 
 $auth = new AuthController();
+if (!$auth->isLoggedIn()) {
+    header('Location: ' . BASE_URL . 'pagina/login.php');
+    exit();
+}
 $auth->checkRole(1); // Solo admin
 
 $adminController = new AdminController();

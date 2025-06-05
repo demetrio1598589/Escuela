@@ -6,7 +6,6 @@ require_once(__DIR__ . '/../modelo/Curso.php');
 class AdminController {
     private $userModel;
     private $cursoModel;
-
     public function __construct() {
         $database = new Database();
         $db = $database->connect();
@@ -16,15 +15,12 @@ class AdminController {
     public function getUserById($userId) {
         return $this->userModel->getUserById($userId);
     }
-
     public function getCursos() {
         return $this->cursoModel->getAllCursos();
     }
-
     public function getEstudiantes() {
         return $this->userModel->getUsersByRole(3); // Rol 3 = estudiante
     }
-
     public function searchEstudiantes($searchTerm) {
         $database = new Database();
         $db = $database->connect();
@@ -41,7 +37,6 @@ class AdminController {
         
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
     public function resetPassword($userId, $newPassword) {
         $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
         return $this->userModel->updatePassword($userId, $hashedPassword);
@@ -72,7 +67,6 @@ class AdminController {
             return false;
         }
     }
-
     public function retirarEstudiante($id) {
         try {
             $database = new Database();

@@ -10,7 +10,6 @@ class User {
     public function __construct($db) {
         $this->conn = $db;
     }
-
     public function getUserByUsername($username) {
         $query = "SELECT * FROM {$this->table} WHERE usuario = :usuario";
         $stmt = $this->conn->prepare($query);
@@ -18,7 +17,6 @@ class User {
         $stmt->execute();
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
-
     public function getUsersByRole($roleId) {
         $query = "SELECT * FROM {$this->table} WHERE rol_id = :rol_id";
         $stmt = $this->conn->prepare($query);
@@ -26,7 +24,6 @@ class User {
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
     public function updatePassword($userId, $newPassword) {
         $query = "UPDATE {$this->table} SET contrasena = :contrasena WHERE id = :id";
         $stmt = $this->conn->prepare($query);
@@ -34,7 +31,6 @@ class User {
         $stmt->bindParam(':id', $userId);
         return $stmt->execute();
     }
-
     public function createUser($nombre, $apellido, $usuario, $contraseña, $correo, $rol_id) {
         try {
             $query = "INSERT INTO {$this->table} 
@@ -61,7 +57,6 @@ class User {
             return false;
         }
     }
-
     public function checkExistingUser($username, $email) {
         $query = "SELECT COUNT(*) as count FROM usuarios 
                 WHERE usuario = :usuario OR correo = :correo
@@ -83,12 +78,9 @@ class User {
         
         return false;
     }
-
     public function getLastError() {
         return $this->lastError;
     }
-
-    // Método adicional para obtener información del usuario por ID
     public function getUserById($userId) {
         $query = "SELECT *, IFNULL(foto_perfil, '') as foto_perfil, IFNULL(foto, '') as foto FROM {$this->table} WHERE id = :id";
         $stmt = $this->conn->prepare($query);
@@ -109,7 +101,6 @@ class User {
             throw new Exception("Solo se permiten archivos JPG, PNG o GIF");
         }
     }
-
     public function handlePhotoUpload($userId, $photoData) {
         try {
             $photoBinary = null;
@@ -171,8 +162,7 @@ class User {
             $this->lastError = $e->getMessage();
             return false;
         }
-    }
-    
+    }    
     public function actualizarFotoPerfil($userId, $fotoPath) {
         try {
             $query = "UPDATE {$this->table} SET foto_perfil = :foto_perfil WHERE id = :id";
@@ -192,12 +182,80 @@ class User {
             return false;
         }
     }
+
     public function blockUser($userId) {
-        $query = "UPDATE {$this->table} SET contrasena = 'bloqueado' WHERE id = :id";
+        // Solo bloquear la cuenta, los tokens se manejan en la tabla tokens
+        $query = "UPDATE usuarios SET contrasena = 'bloqueado' WHERE id = :id";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(':id', $userId);
         return $stmt->execute();
     }
-    
+    public function ensureSessionIdColumnExists() {
+        try {
+            $checkQuery = "SHOW COLUMNS FROM usuarios LIKE 'session_id'";
+            $stmt = $this->conn->query($checkQuery);
+            
+            if ($stmt->rowCount() == 0) {
+                $alterQuery = "ALTER TABLE usuarios ADD COLUMN session_id VARCHAR(255) DEFAULT NULL";
+                $this->conn->exec($alterQuery);
+            }
+            return true;
+        } catch (PDOException $e) {
+            $this->lastError = $e->getMessage();
+            return false;
+        }
+    }
+    // Metodos para manejo de tokens en cambiar contraseña
+    public function getTokenUser($token) {
+        $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, u.rol_id 
+                FROM usuarios u
+                JOIN tokens t ON u.id = t.usuario_id
+                WHERE t.token = :token 
+                AND t.usado = FALSE
+                AND t.fecha_token >= DATE_SUB(NOW(), INTERVAL 58 MINUTE)";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':token', $token);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function markTokenAsUsed($token, $userId) {
+        $query = "UPDATE tokens SET 
+                usado = TRUE 
+                WHERE token = :token AND usuario_id = :id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':token', $token);
+        $stmt->bindParam(':id', $userId);
+        return $stmt->execute();
+    }
+
+    public function createToken($userId, $token) {
+        $query = "INSERT INTO tokens (usuario_id, token) VALUES (:user_id, :token)";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':user_id', $userId);
+        $stmt->bindParam(':token', $token);
+        return $stmt->execute();
+    }
+
+    public function getActiveTokens($userId = null) {
+        $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, t.token, t.fecha_token, t.usado, r.nombre as rol
+                FROM usuarios u
+                JOIN roles r ON u.rol_id = r.id
+                INNER JOIN tokens t ON u.id = t.usuario_id
+                WHERE t.fecha_token >= DATE_SUB(NOW(), INTERVAL 58 MINUTE)";
+        
+        if ($userId) {
+            $query .= " AND u.id = :user_id";
+        }
+        
+        $query .= " ORDER BY t.fecha_token DESC";
+        
+        $stmt = $this->conn->prepare($query);
+        if ($userId) {
+            $stmt->bindParam(':user_id', $userId);
+        }
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }
 ?>

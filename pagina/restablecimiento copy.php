@@ -11,23 +11,23 @@ $userData = null;
 // Verificar si hay un token en la URL
 if (isset($_GET['token'])) {
     $token = $_GET['token'];
-    $userData = $auth->getUserByToken($token);
     
-    // Obtener información del usuario asociado al token (nuevo esquema)
+    // Obtener información del usuario asociado al token
+    $database = new Database();
+    $db = $database->connect();
+    $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, u.rol_id, t.id as token_id
+          FROM usuarios u
+          JOIN tokens t ON u.id = t.usuario_id
+          WHERE t.token = :token 
+          AND t.usado = FALSE
+          AND t.fecha_token >= DATE_SUB(NOW(), INTERVAL 24 HOUR)"; // Token válido por 24 horas
+    $stmt = $db->prepare($query);
+    $stmt->bindParam(':token', $token);
+    $stmt->execute();
+    $userData = $stmt->fetch(PDO::FETCH_ASSOC);
+    
     if (!$userData) {
         $error = "El enlace de recuperación no es válido o ha expirado";
-    } else {
-        // Get token expiration time
-        $database = new Database();
-        $db = $database->connect();
-        $query = "SELECT UNIX_TIMESTAMP(fecha_token) + (58 * 60) as expiration_time 
-                  FROM tokens 
-                  WHERE token = :token";
-        $stmt = $db->prepare($query);
-        $stmt->bindParam(':token', $token);
-        $stmt->execute();
-        $tokenData = $stmt->fetch(PDO::FETCH_ASSOC);
-        $expirationTime = $tokenData['expiration_time'];
     }
 
     // Procesar el formulario de restablecimiento
@@ -56,7 +56,7 @@ if (isset($_GET['token'])) {
             $db->beginTransaction();
             
             try {
-                // 1. Actualizar contraseña en usuarios
+                // 1. Actualizar contraseña del usuario
                 $query = "UPDATE usuarios SET 
                          contrasena = :password 
                          WHERE id = :id";
@@ -71,10 +71,9 @@ if (isset($_GET['token'])) {
                 // 2. Marcar token como usado
                 $query = "UPDATE tokens SET 
                          usado = TRUE 
-                         WHERE token = :token AND usuario_id = :id";
+                         WHERE id = :token_id";
                 $stmt = $db->prepare($query);
-                $stmt->bindParam(':token', $token);
-                $stmt->bindParam(':id', $userData['id']);
+                $stmt->bindParam(':token_id', $userData['token_id']);
                 
                 if (!$stmt->execute()) {
                     throw new Exception("Error al actualizar el token");
@@ -83,27 +82,14 @@ if (isset($_GET['token'])) {
                 // Confirmar transacción
                 $db->commit();
                 
-                // Generar nueva sesión segura
+                // Iniciar sesión automáticamente
                 session_regenerate_id(true);
-                $newSessionId = session_id();
-                
-                // Actualizar session_id en la base de datos
-                $query = "UPDATE usuarios SET 
-                         session_id = :session_id 
-                         WHERE id = :id";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(':session_id', $newSessionId);
-                $stmt->bindParam(':id', $userData['id']);
-                $stmt->execute();
-                
-                // Establecer datos de sesión
                 $_SESSION['user_id'] = $userData['id'];
                 $_SESSION['username'] = $userData['usuario'];
                 $_SESSION['nombre'] = $userData['nombre'];
                 $_SESSION['apellido'] = $userData['apellido'];
                 $_SESSION['rol'] = $userData['rol_id'];
-                $_SESSION['current_session_id'] = $newSessionId;
-                $_SESSION['password_changed'] = true;
+                $_SESSION['password_changed'] = true; // Para mostrar notificación
                 
                 // Redirigir según el rol
                 $redirectUrl = BASE_URL . 'pagina/';
@@ -132,7 +118,6 @@ if (isset($_GET['token'])) {
     exit();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -180,11 +165,7 @@ if (isset($_GET['token'])) {
                 <div class="alert error"><?= htmlspecialchars($error) ?></div>
             <?php endif; ?>
             
-            <?php if ($userData && $expirationTime): ?>
-                <div id="countdown" class="countdown">
-                    Tiempo restante: <span id="time"></span>
-                </div>
-                
+            <?php if ($userData): ?>
                 <div class="user-info">
                     <p>Estás restableciendo la contraseña para:</p>
                     <h3><?= htmlspecialchars($userData['nombre'] . ' ' . $userData['apellido']) ?></h3>
@@ -222,44 +203,6 @@ if (isset($_GET['token'])) {
                     <a href="<?= BASE_URL ?>pagina/solicitartoken.php">Solicitar nuevo enlace de recuperación</a>
                 </p>
             <?php endif; ?>
-        <script>
-            const expirationTime = <?= $expirationTime ?>;
-            
-            function updateCountdown() {
-                const now = Math.floor(Date.now() / 1000);
-                const remaining = expirationTime - now;
-                
-                if (remaining <= 0) {
-                    document.getElementById('time').textContent = '0:00';
-                    document.getElementById('countdown').classList.add('expired');
-                    document.getElementById('countdown').textContent = 'El token ha expirado';
-                    
-                    // Disable form inputs
-                    const inputs = document.querySelectorAll('input');
-                    inputs.forEach(input => {
-                        input.disabled = true;
-                    });
-                    
-                    // Change button text
-                    const button = document.querySelector('button[type="submit"]');
-                    if (button) {
-                        button.disabled = true;
-                        button.textContent = 'Token expirado';
-                    }
-                    
-                    return;
-                }
-                
-                const minutes = Math.floor(remaining / 60);
-                const seconds = remaining % 60;
-                document.getElementById('time').textContent = 
-                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            }
-            
-            // Update every second
-            updateCountdown();
-            setInterval(updateCountdown, 1000);
-        </script>    
         </div>
     </main>
 

@@ -10,6 +10,10 @@ require_once __DIR__.'/../../libraries/PHPMailer/src/SMTP.php';
 require_once __DIR__.'/../../libraries/PHPMailer/src/Exception.php';
 
 $auth = new AuthController();
+if (!$auth->isLoggedIn()) {
+    header('Location: ' . BASE_URL . 'pagina/login.php');
+    exit();
+}
 $auth->checkRole(1); // Solo admin
 
 $adminController = new AdminController();
@@ -29,12 +33,12 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['search'])) {
         $searchTerm = $_POST['search'];
-        $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, r.nombre as rol 
-                 FROM usuarios u
-                 JOIN roles r ON u.rol_id = r.id
-                 WHERE (u.nombre LIKE :search OR u.apellido LIKE :search)
-                 AND u.rol_id IN (2, 3)
-                 ORDER BY u.apellido, u.nombre";
+        $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, r.nombre as rol, 
+                t.token, t.fecha_token
+                FROM usuarios u
+                JOIN roles r ON u.rol_id = r.id
+                LEFT JOIN tokens t ON u.id = t.usuario_id AND t.usado = FALSE
+                WHERE u.rol_id IN (2, 3)";
         $stmt = $db->prepare($query);
         $searchParam = "%" . $searchTerm . "%";
         $stmt->bindParam(':search', $searchParam);
@@ -49,7 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = $user['usuario'] . $randomDigits;
         
         // Actualizar el token en la base de datos
-        $query = "UPDATE usuarios SET token = :token, fecha_token = NOW() WHERE id = :id";
+        $query = "INSERT INTO tokens (usuario_id, token) VALUES (:id, :token) 
+                ON DUPLICATE KEY UPDATE token = :token, fecha_token = NOW(), usado = FALSE";
         $stmt = $db->prepare($query);
         $stmt->bindParam(':token', $token);
         $stmt->bindParam(':id', $userId);

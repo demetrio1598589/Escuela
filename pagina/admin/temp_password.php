@@ -5,38 +5,38 @@ require_once(__DIR__ . '/../../config/no_cache.php');
 require_once(__DIR__ . '/../../config/db.php');
 
 $auth = new AuthController();
+if (!$auth->isLoggedIn()) {
+    header('Location: ' . BASE_URL . 'pagina/login.php');
+    exit();
+}
 $auth->checkRole(1); // Solo admin
 
 $db = new Database();
 $conn = $db->connect();
 
-// Initialize variables
+// Inicializar variables
 $usuarios = [];
 $searchTerm = '';
 
+$userModel = new User($conn);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
     $searchTerm = $_POST['search'];
-    $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, u.token, u.fecha_token, r.nombre as rol 
-              FROM usuarios u
-              JOIN roles r ON u.rol_id = r.id
-              WHERE (u.token IS NOT NULL OR u.fecha_token IS NOT NULL)
-              AND (u.nombre LIKE :search OR u.apellido LIKE :search)
-              ORDER BY u.fecha_token DESC";
-    $stmt = $conn->prepare($query);
-    $searchParam = "%" . $searchTerm . "%";
-    $stmt->bindParam(':search', $searchParam);
-    $stmt->execute();
-    $usuarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $usuarios = $userModel->getActiveTokens(); // This will only get tokens from last 58 minutes
+    
+    // Filter by search term
+    if (!empty($searchTerm)) {
+        $searchTerm = strtolower($searchTerm);
+        $usuarios = array_filter($usuarios, function($user) use ($searchTerm) {
+            return strpos(strtolower($user['nombre']), $searchTerm) !== false ||
+                   strpos(strtolower($user['apellido']), $searchTerm) !== false ||
+                   strpos(strtolower($user['usuario']), $searchTerm) !== false;
+        });
+    }
 } else {
-    $query = "SELECT u.id, u.nombre, u.apellido, u.usuario, u.token, u.fecha_token, r.nombre as rol 
-              FROM usuarios u
-              JOIN roles r ON u.rol_id = r.id
-              WHERE u.token IS NOT NULL OR u.fecha_token IS NOT NULL
-              ORDER BY u.fecha_token DESC";
-    $stmt = $conn->prepare($query);
-    $stmt->execute();
-    $usuarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $usuarios = $userModel->getActiveTokens();
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -65,14 +65,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
             background-color: #2196F3;
             color: white;
         }
+        .role-administrador {
+            background-color: #f44336;
+            color: white;
+        }
         .hidden-password {
             filter: blur(4px);
             user-select: none;
         }
+        .status-active-green {
+            color: green;
+            font-weight: bold;
+        }
+        .status-active-yellow {
+            color: orange;
+            font-weight: bold;
+        }
+        .status-active-red {
+            color: red;
+            font-weight: bold;
+        }
+        .status-expired {
+            color: #888;
+            font-weight: bold;
+        }
+        .status-used {
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
-    <!-- Header con sesión -->
     <?php include(__DIR__ . '/../partials/headersesion.php'); ?>
 
     <main class="dashboard">
@@ -80,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
 
         <div class="content">
             <h1>Contraseñas Temporales Generadas</h1>
-            
+
             <form method="POST" class="search-form">
                 <div class="form-group">
                     <label for="searchInput">Buscar Usuario:</label>
@@ -91,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
                     <?php endif; ?>
                 </div>
             </form>
-            
+
             <table>
                 <thead>
                     <tr>
@@ -122,7 +145,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
                                     <?php endif; ?>
                                 </td>
                                 <td><?= $usuario['fecha_token'] ? date('d/m/Y H:i', strtotime($usuario['fecha_token'])) : 'N/A' ?></td>
-                                <td><?= $usuario['token'] ? 'Activa' : 'Usada' ?></td>
+                                <td>
+                                    <?php
+                                    if ($usuario['token']) {
+                                        $creationTime = strtotime($usuario['fecha_token']);
+                                        $expirationDuration = 24 * 60 * 60; // 24 horas en segundos
+                                        $expirationTime = $creationTime + $expirationDuration;
+                                    ?>
+                                        <span class="token-status"
+                                              data-is-used="<?= $usuario['usado'] ? 'true' : 'false' ?>"
+                                              data-expiration-time="<?= $expirationTime ?>"
+                                              data-creation-time="<?= $creationTime ?>">
+                                            <?php 
+                                            if ($usuario['usado']) {
+                                                echo '<span class="status-used">Usada</span>';
+                                            } else {
+                                                $remaining = $expirationTime - time();
+                                                if ($remaining <= 0) {
+                                                    echo '<span class="status-expired">Caducada</span>';
+                                                } else {
+                                                    echo '<span class="status-active-green">Activa</span>';
+                                                }
+                                            }
+                                            ?>
+                                        </span>
+                                    <?php } else { ?>
+                                        N/A
+                                    <?php } ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -131,16 +181,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
         </div>
     </main>
 
-    <!-- Footer -->
     <?php include(__DIR__ . '/../partials/footer.html'); ?>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        // Function to show/hide password
         function togglePassword(element) {
             const container = element.parentElement;
             const hidden = container.querySelector('.hidden-password');
             const actual = container.querySelector('.actual-password');
-            
+
             if (hidden.style.display === 'none') {
                 hidden.style.display = 'inline';
                 actual.style.display = 'none';
@@ -151,15 +201,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search'])) {
                 element.textContent = 'Ocultar';
             }
         }
-        
-        $(document).ready(function() {
-            // Optional: live search with AJAX
-            $('#searchInput').on('input', function() {
-                const searchTerm = $(this).val();
-                if (searchTerm.length >= 2) {
-                    $('.search-form').submit();
+
+        // Function to format time
+        function formatTime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            let parts = [];
+            if (hours > 0) parts.push(hours + 'h');
+            if (minutes > 0 || hours > 0) parts.push(minutes + 'm');
+            parts.push(secs + 's');
+            
+            return parts.join(' ');
+        }
+
+        // Function to update token status dynamically
+        function updateTokenStatus() {
+            const now = Math.floor(Date.now() / 1000); // Tiempo actual en segundos
+
+            document.querySelectorAll('.token-status').forEach(statusSpan => {
+                const isUsed = statusSpan.dataset.isUsed === 'true';
+                const expirationTime = parseInt(statusSpan.dataset.expirationTime);
+                const creationTime = parseInt(statusSpan.dataset.creationTime);
+                
+                if (isUsed) {
+                    statusSpan.innerHTML = '<span class="status-used">Usada</span>';
+                } else {
+                    const remainingTime = expirationTime - now;
+                    
+                    if (remainingTime <= 0) {
+                        statusSpan.innerHTML = '<span class="status-expired">Caducada</span>';
+                    } else {
+                        // Calcular porcentaje de tiempo restante
+                        const totalDuration = expirationTime - creationTime;
+                        const percentage = (remainingTime / totalDuration) * 100;
+                        
+                        let statusClass;
+                        if (percentage > 50) {
+                            statusClass = 'status-active-green';
+                        } else if (percentage > 20) {
+                            statusClass = 'status-active-yellow';
+                        } else {
+                            statusClass = 'status-active-red';
+                        }
+                        
+                        const formattedTime = formatTime(remainingTime);
+                        statusSpan.innerHTML = `<span class="${statusClass}">Activa (${formattedTime})</span>`;
+                    }
                 }
             });
+        }
+
+        $(document).ready(function() {
+            // Initial update when the page loads
+            updateTokenStatus();
+
+            // Update token status every second
+            setInterval(updateTokenStatus, 1000);
         });
     </script>
 </body>

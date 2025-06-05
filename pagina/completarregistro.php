@@ -53,6 +53,17 @@ if (isset($_GET['token'])) {
             
             // Iniciar sesión automáticamente
             session_regenerate_id(true);
+            $newSessionId = session_id();
+
+            // Actualizar session_id en la base de datos
+            $query = "UPDATE usuarios SET 
+                        session_id = :session_id 
+                        WHERE id = :id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':session_id', $newSessionId);
+            $stmt->bindParam(':id', $userData['id']);
+            $stmt->execute();
+
             $_SESSION['user_id'] = $userId;
             $_SESSION['username'] = $userData['usuario'];
             $_SESSION['nombre'] = $userData['nombre'];

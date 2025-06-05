@@ -26,7 +26,26 @@ class AuthController {
         }
         
         // Handle token login (works even if account is blocked)
-        if (!empty($user['token']) && $user['token'] === $contraseña) {
+        $database = new Database();
+        $db = $database->connect();
+        $query = "SELECT token FROM tokens 
+                WHERE usuario_id = :user_id 
+                AND usado = FALSE 
+                AND fecha_token >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':user_id', $user['id']);
+        $stmt->execute();
+        $tokenData = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($tokenData && $tokenData['token'] === $contraseña) {
+            // Generar un nuevo ID de sesión único
+            $newSessionId = session_id() . '_' . bin2hex(random_bytes(16));
+            
+            // Verificar si la columna session_id existe antes de actualizar
+            if ($this->checkSessionIdColumnExists()) {
+                $this->updateUserSessionId($user['id'], $newSessionId);
+            }
+            
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['usuario'];
             $_SESSION['nombre'] = $user['nombre'];
@@ -34,6 +53,7 @@ class AuthController {
             $_SESSION['rol'] = $user['rol_id'];
             $_SESSION['correo'] = $user['correo'];
             $_SESSION['first_login'] = true;
+            $_SESSION['current_session_id'] = $newSessionId;
             
             header('Location: ' . BASE_URL . 'pagina/estudiante/contrasenaestudiante.php?token=' . $user['token']);
             exit();
@@ -47,12 +67,20 @@ class AuthController {
         // Normal password check
         $hashedInput = hash('sha256', $contraseña);
         if ($hashedInput === $user['contrasena']) {
+            // Regenerar el ID de sesión primero
+            session_regenerate_id(true);
+            $newSessionId = session_id();
+            
+            // Actualizar el session_id en la base de datos
+            $this->updateUserSessionId($user['id'], $newSessionId);
+            
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['usuario'];
             $_SESSION['nombre'] = $user['nombre'];
             $_SESSION['apellido'] = $user['apellido'];
             $_SESSION['rol'] = $user['rol_id'];
             $_SESSION['correo'] = $user['correo'];
+            $_SESSION['current_session_id'] = $newSessionId;
 
             switch ($user['rol_id']) {
                 case 1: header('Location: ' . BASE_URL . 'pagina/admin/perfiladmin.php'); exit();
@@ -66,6 +94,72 @@ class AuthController {
             }
         }
         return false;
+    }
+    private function updateUserSessionId($userId, $sessionId) {
+        try {
+            $database = new Database();
+            $db = $database->connect();
+            $query = "UPDATE usuarios SET session_id = :session_id WHERE id = :id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':session_id', $sessionId);
+            $stmt->bindParam(':id', $userId);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error updating session_id: " . $e->getMessage());
+            return false;
+        }
+    }
+    private function checkSessionIdColumnExists() {
+        try {
+            $database = new Database();
+            $db = $database->connect();
+            $stmt = $db->query("SHOW COLUMNS FROM usuarios LIKE 'session_id'");
+            return ($stmt->rowCount() > 0);
+        } catch (PDOException $e) {
+            error_log("Error checking session_id column: " . $e->getMessage());
+            return false;
+        }
+    }
+    public function validateSession() {
+        // Primero verificar si hay una sesión activa
+        if (!isset($_SESSION['user_id'])) {
+            return false;
+        }
+
+        // Obtener el usuario actual
+        $user = $this->getUserById($_SESSION['user_id']);
+        
+        // Si no existe el usuario o no tiene session_id, cerrar sesión
+        if (!$user || !isset($user['session_id'])) {
+            $this->logout();
+            header('Location: ' . BASE_URL . 'pagina/login.php?reason=invalid_session');
+            exit();
+        }
+
+        // Verificar coincidencia de session_id
+        if ($user['session_id'] !== $_SESSION['current_session_id']) {
+            // Destruir la sesión local pero no limpiar el session_id en BD
+            session_unset();
+            session_destroy();
+            
+            // Redirigir con parámetro para mostrar mensaje
+            header('Location: ' . BASE_URL . 'pagina/login.php?reason=session_taken');
+            exit();
+        }
+
+        return true;
+    }
+    public function isFirstLogin($userId) {
+        // Verificar si el estudiante tiene cursos matriculados
+        $database = new Database();
+        $db = $database->connect();
+        $query = "SELECT COUNT(*) as count FROM estudiante_curso WHERE estudiante_id = :user_id";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':user_id', $userId);
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        return ($result['count'] == 0);
     }
 
     public function register($nombre, $apellido, $usuario, $contraseña, $correo) {
@@ -108,7 +202,6 @@ class AuthController {
             throw new Exception("Error técnico al registrar. Por favor intente más tarde.");
         }
     }
-
     public function createTempUser($nombre, $apellido, $usuario, $email, $token) {
         try {
             // Validación básica
@@ -148,7 +241,6 @@ class AuthController {
             throw new Exception("Error técnico al registrar. Por favor intente más tarde.");
         }
     }
-
     public function completeRegistration($tempUserId, $password) {
         try {
             // Obtener datos del usuario temporal
@@ -194,7 +286,11 @@ class AuthController {
         }
     }
 
-    public function logout() {
+    public function logout($clearSessionId = true) {
+        if ($this->isLoggedIn() && $clearSessionId) {
+            // Limpiar el session_id en la base de datos
+            $this->updateUserSessionId($_SESSION['user_id'], null);
+        }
         // Limpiar todas las variables de sesión
         $_SESSION = array();
 
@@ -222,9 +318,12 @@ class AuthController {
         header("Location: " . BASE_URL . "pagina/index.php");
         exit();
     }
-
     public function isLoggedIn() {
-        return isset($_SESSION['user_id']);
+        if (!isset($_SESSION['user_id']) || !isset($_SESSION['current_session_id'])) {
+            return false;
+        }
+        
+        return $this->validateSession();
     }
 
     public function checkRole($requiredRole) {
@@ -232,29 +331,6 @@ class AuthController {
             header('Location: ' . BASE_URL . 'pagina/login.php');
             exit();
         }
-    }
-
-    public function isFirstLogin($userId) {
-        // Verificar si el estudiante tiene cursos matriculados
-        $database = new Database();
-        $db = $database->connect();
-        $query = "SELECT COUNT(*) as count FROM estudiante_curso WHERE estudiante_id = :user_id";
-        $stmt = $db->prepare($query);
-        $stmt->bindParam(':user_id', $userId);
-        $stmt->execute();
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        return ($result['count'] == 0);
-    }
-
-    public function getUserByToken($token) {
-        $database = new Database();
-        $db = $database->connect();
-        $query = "SELECT * FROM usuarios WHERE token = :token AND fecha_token >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
-        $stmt = $db->prepare($query);
-        $stmt->bindParam(':token', $token);
-        $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
     public function getUserById($userId) {
@@ -266,11 +342,23 @@ class AuthController {
         $stmt->execute();
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
-
+    public function getUserByToken($token) {
+        $database = new Database();
+        $db = $database->connect();
+        $query = "SELECT u.* FROM usuarios u 
+                JOIN tokens t ON u.id = t.usuario_id
+                WHERE t.token = :token 
+                AND t.usado = FALSE
+                AND t.fecha_token >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':token', $token);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
     public function clearToken($userId) {
         $database = new Database();
         $db = $database->connect();
-        $query = "UPDATE usuarios SET token = NULL WHERE id = :id";
+        $query = "UPDATE tokens SET usado = TRUE WHERE usuario_id = :id AND usado = FALSE";
         $stmt = $db->prepare($query);
         $stmt->bindParam(':id', $userId);
         return $stmt->execute();
@@ -283,16 +371,31 @@ class AuthController {
 
         $resetLink = BASE_URL . 'pagina/restablecimiento.php?token=' . urlencode($token);
 
-        // Configurar PHPMailer
-        $mail = new PHPMailer\PHPMailer\PHPMailer(true); // Passing `true` enables exceptions
-
         try {
-            // Configuración del servidor SMTP
+            // Eliminar tokens antiguos no usados para este usuario
+            $database = new Database();
+            $db = $database->connect();
+            $query = "DELETE FROM tokens WHERE usuario_id = :user_id AND usado = FALSE";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':user_id', $userId);
+            $stmt->execute();
+            
+            // Insertar nuevo token en la tabla tokens
+            $query = "INSERT INTO tokens (usuario_id, token) VALUES (:user_id, :token)";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':user_id', $userId);
+            $stmt->bindParam(':token', $token);
+            $stmt->execute();
+
+            // Configurar PHPMailer
+            $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+            
+            // Configuración SMTP (mantener igual)
             $mail->isSMTP();
-            $mail->Host = 'smtp.gmail.com'; // Cambiar por tu servidor SMTP
+            $mail->Host = 'smtp.gmail.com';
             $mail->SMTPAuth = true;
-            $mail->Username = 'demetrio7000@gmail.com'; // Cambiar por tu email
-            $mail->Password = 'weln ldhi bwwn daoh'; // Cambiar por tu contraseña
+            $mail->Username = 'demetrio7000@gmail.com';
+            $mail->Password = 'weln ldhi bwwn daoh';
             $mail->SMTPSecure = 'tls';
             $mail->Port = 587;
             $mail->CharSet = 'UTF-8';
@@ -301,7 +404,7 @@ class AuthController {
             $mail->setFrom('no-reply@escuela.com', 'Escuela');
             $mail->addAddress($user['correo'], $user['nombre'] . ' ' . $user['apellido']);
 
-            // Contenido del email
+            // Contenido del email (mantener igual)
             $mail->isHTML(true);
             $mail->Subject = 'Restablecimiento de contraseña';
             
@@ -317,6 +420,7 @@ class AuthController {
                 <p>Tu token de acceso es: <strong>{$token}</strong></p>
                 <p>Por favor, haz clic en el siguiente enlace para establecer una nueva contraseña:</p>
                 <p><a href='{$resetLink}'>{$resetLink}</a></p>
+                <p>Este token expirará en 58 minutos.</p>
                 <p>Si no solicitaste este cambio, por favor ignora este correo.</p>
             </body>
             </html>
@@ -353,20 +457,23 @@ class AuthController {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user) {
-            // No revelar que el email no existe por seguridad
-            error_log("Intento de recuperación para email no registrado: $email");
-            return true; // Devolver true igualmente por seguridad
+            return true; // Por seguridad
         }
         
         // Generar token: username + 6 dígitos aleatorios
         $randomDigits = mt_rand(100000, 999999);
         $token = $user['usuario'] . $randomDigits;
         
-        // Actualizar el token en la base de datos
-        $query = "UPDATE usuarios SET token = :token, fecha_token = NOW() WHERE id = :id";
+        // Insertar o actualizar token en la tabla tokens
+        $query = "INSERT INTO tokens (usuario_id, token) 
+                VALUES (:user_id, :token)
+                ON DUPLICATE KEY UPDATE 
+                token = VALUES(token), 
+                fecha_token = NOW(), 
+                usado = FALSE";
         $stmt = $db->prepare($query);
         $stmt->bindParam(':token', $token);
-        $stmt->bindParam(':id', $user['id']);
+        $stmt->bindParam(':user_id', $user['id']);
         
         if (!$stmt->execute()) {
             error_log("Error al actualizar token para usuario ID: " . $user['id']);

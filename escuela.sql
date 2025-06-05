@@ -13,8 +13,7 @@ CREATE TABLE usuarios (
     apellido VARCHAR(50) NOT NULL,
     usuario VARCHAR(50) UNIQUE NOT NULL,
     contrasena VARCHAR(255) NOT NULL,
-    token VARCHAR(255) DEFAULT NULL,
-    fecha_token DATETIME,
+    session_id VARCHAR(255) DEFAULT NULL,
     rol_id INT NOT NULL,
     correo VARCHAR(100) UNIQUE,
     foto_perfil VARCHAR(255) DEFAULT NULL,
@@ -32,6 +31,15 @@ CREATE TABLE usuarios_temp (
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY (usuario),
     UNIQUE KEY (correo)
+);
+
+CREATE TABLE tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    token VARCHAR(255) NOT NULL,
+    fecha_token DATETIME DEFAULT CURRENT_TIMESTAMP,
+    usado BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
 );
 
 CREATE TABLE cursos (
@@ -62,26 +70,6 @@ CREATE TABLE asistencias (
     FOREIGN KEY (estudiante_id) REFERENCES usuarios(id),
     FOREIGN KEY (curso_id) REFERENCES cursos(id)
 );
-
-DELIMITER $$
-
-CREATE TRIGGER trigger_fecha_token
-BEFORE UPDATE ON usuarios
-FOR EACH ROW
-BEGIN
-    -- Cuando el token es asignado (de NULL a algo)
-    IF OLD.token IS NULL AND NEW.token IS NOT NULL THEN
-        SET NEW.fecha_token = CURRENT_TIMESTAMP;    
-    -- Cuando el token es usado y eliminado (de valor a NULL)
-    ELSEIF OLD.token IS NOT NULL AND NEW.token IS NULL THEN
-        SET NEW.fecha_token = CURRENT_TIMESTAMP;
-    -- Cuando el token cambia (por regeneración)
-    ELSEIF OLD.token IS NOT NULL AND NEW.token IS NOT NULL AND OLD.token != NEW.token THEN
-        SET NEW.fecha_token = CURRENT_TIMESTAMP;
-    END IF;
-END$$
-
-DELIMITER ;
 
 -- Admin
 INSERT INTO usuarios (nombre, apellido, usuario, contrasena, rol_id, correo, foto_perfil)

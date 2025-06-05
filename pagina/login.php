@@ -4,6 +4,19 @@ require_once(__DIR__ . '/../controlador/AuthController.php');
 require_once(__DIR__ . '/../config/no_cache.php');
 require_once(__DIR__ . '/../modelo/User.php');
 
+// Manejar mensajes de error de sesión
+$sessionError = '';
+if (isset($_GET['reason'])) {
+    switch ($_GET['reason']) {
+        case 'session_taken':
+            $sessionError = 'Tu sesión fue tomada por otro dispositivo. Por favor inicia sesión nuevamente.';
+            break;
+        case 'invalid_session':
+            $sessionError = 'Sesión inválida. Por favor inicia sesión nuevamente.';
+            break;
+    }
+}
+
 $database = new Database();
 $db = $database->connect();
 $userModel = new User($db);
@@ -192,6 +205,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <h1>Iniciar Sesión</h1>
         <?php if ($error): ?>
             <div class="alert error"><?= $error ?></div>
+        <?php endif; ?>
+        <?php if ($sessionError): ?>
+            <div class="alert error"><?= htmlspecialchars($sessionError) ?></div>
         <?php endif; ?>
         
         <div id="login-form-container" <?= $showCaptcha ? 'style="display: none;"' : '' ?>>

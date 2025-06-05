@@ -5,6 +5,10 @@ require_once(__DIR__ . '/../../controlador/ProfesorController.php');
 require_once(__DIR__ . '/../../modelo/Curso.php');
 
 $auth = new AuthController();
+if (!$auth->isLoggedIn()) {
+    header('Location: ' . BASE_URL . 'pagina/login.php');
+    exit();
+}
 $auth->checkRole(2); // Solo profesores
 
 $profesorController = new ProfesorController();
