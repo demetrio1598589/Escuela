@@ -33,24 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $newPassword = $_POST['new_password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
     
-    try {
-        // Validaciones básicas
-        if (!$tokenMode && empty($currentPassword)) {
-            throw new Exception("Debe ingresar su contraseña actual");
-        }
-        
-        if (empty($newPassword)) {
-            throw new Exception("La nueva contraseña no puede estar vacía");
-        }
-        
-        if ($newPassword !== $confirmPassword) {
-            throw new Exception("Las contraseñas no coinciden");
-        }
-        
-        if (strlen($newPassword) < 6) {
-            throw new Exception("La contraseña debe tener al menos 6 caracteres");
-        }
-        
+    try {        
         // Verificar contraseña actual (solo si no es modo token)
         if (!$tokenMode) {
             $user = $auth->getUserById($_SESSION['user_id']);
@@ -91,62 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cambiar Contraseña</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
-    <script>
-        // Mismo script de validación de contraseña que en completarregistro.php
-        function checkPasswordStrength(password) {
-            // Al menos 8 caracteres
-            if (strlen($password) < 8) return false;
-            
-            // Al menos 2 letras mayúsculas
-            if (preg_match_all('/[A-Z]/', $password) < 2) return false;
-            
-            // Al menos 2 letras minúsculas
-            if (preg_match_all('/[a-z]/', $password) < 2) return false;
-            
-            // Al menos 2 números
-            if (preg_match_all('/[0-9]/', $password) < 2) return false;
-            
-            // Al menos 2 caracteres especiales
-            if (preg_match_all('/[^A-Za-z0-9]/', $password) < 2) return false;
-            
-            return true;
-        }
-        function validatePasswords() {
-            const newPassword = document.getElementById('new_password').value;
-            const confirmPassword = document.getElementById('confirm_password').value;
-            const submitButton = document.querySelector('button[type="submit"]');
-
-            // Verificar fortaleza de contraseña
-            const isStrong = checkPasswordStrength(newPassword);
-
-            // Verificar coincidencia
-            const matchElement = document.getElementById('password-match');
-            if (newPassword && confirmPassword) {
-                if (newPassword === confirmPassword) {
-                    matchElement.textContent = 'Las contraseñas coinciden';
-                    matchElement.className = 'password-strength strong';
-                } else {
-                    matchElement.textContent = 'Las contraseñas no coinciden';
-                    matchElement.className = 'password-strength weak';
-                }
-            } else {
-                matchElement.textContent = '';
-            }
-
-            // Habilitar/deshabilitar botón
-            submitButton.disabled = !(isStrong && newPassword && confirmPassword && newPassword === confirmPassword);
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('new_password').addEventListener('input', function() {
-                validatePasswords();
-            });
-
-            document.getElementById('confirm_password').addEventListener('input', function() {
-                validatePasswords();
-            });
-        });
-    </script>
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/validarclave.css">
+    <script src="<?= BASE_URL ?>pagina/js/validarclave.js"></script>
 </head>
 <body>
     <!-- Header con sesión -->
@@ -181,6 +111,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="password" id="current_password" name="current_password" required>
                 </div>
                 <?php endif; ?>
+
+                <div class="password-requirements">
+                    <p><strong>Requisitos de contraseña:</strong></p>
+                    <ul>
+                        <li id="req-minLength" class="requirement">Mínimo 8 caracteres</li>
+                        <li id="req-hasUpper" class="requirement">Al menos 2 letras mayúsculas</li>
+                        <li id="req-hasLower" class="requirement">Al menos 2 letras minúsculas</li>
+                        <li id="req-hasNumber" class="requirement">Al menos 2 números</li>
+                        <li id="req-hasSpecial" class="requirement">Al menos 2 caracteres especiales</li>
+                    </ul>
+                    <div id="password-strength" class="password-strength"></div>
+                    <div id="password-match" class="password-strength"></div>
+                </div>                
                 
                 <div class="form-group">
                     <label for="new_password">Nueva Contraseña:</label>
@@ -198,6 +141,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="hidden" name="token" value="<?= htmlspecialchars($_GET['token']) ?>">
                 <?php endif; ?>
             </form>
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const newPassword = document.getElementById('new_password');
+                    const confirmPassword = document.getElementById('confirm_password');
+                    
+                    if (newPassword && confirmPassword) {
+                        newPassword.addEventListener('input', function() {
+                            validatePasswords();
+                        });
+                        
+                        confirmPassword.addEventListener('input', function() {
+                            validatePasswords();
+                        });
+                    }
+                    
+                    // Adaptar la función validatePasswords para este formulario
+                    function validatePasswords() {
+                        const password = document.getElementById('new_password').value;
+                        const confirmPassword = document.getElementById('confirm_password').value;
+                        const submitButton = document.querySelector('button[type="submit"]');
+
+                        // Verificar fortaleza de contraseña
+                        const isStrong = checkPasswordStrength(password);
+
+                        // Verificar coincidencia
+                        const matchElement = document.getElementById('password-match');
+                        if (password && confirmPassword) {
+                            if (password === confirmPassword) {
+                                matchElement.textContent = 'Las contraseñas coinciden';
+                                matchElement.className = 'password-strength strong';
+                            } else {
+                                matchElement.textContent = 'Las contraseñas no coinciden';
+                                matchElement.className = 'password-strength weak';
+                            }
+                        } else {
+                            matchElement.textContent = '';
+                        }
+
+                        // Habilitar/deshabilitar botón
+                        if (submitButton) {
+                            submitButton.disabled = !(isStrong && password && confirmPassword && password === confirmPassword);
+                        }
+                    }
+                    
+                    // Validar inicialmente si es modo token (sin contraseña actual)
+                    <?php if ($tokenMode): ?>
+                        validatePasswords();
+                    <?php endif; ?>
+                });
+            </script>
         </div>
     </main>
 

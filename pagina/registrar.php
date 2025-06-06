@@ -106,6 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <li>Usuario: {$formData['usuario']}</li>
                     <li>Email: {$formData['email']}</li>
                 </ul>
+                <p>Este token expirará en 2 minutos.</p>
                 <p>Si no solicitaste este registro, por favor ignora este correo.</p>
             </body>
             </html>

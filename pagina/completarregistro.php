@@ -14,6 +14,7 @@ $auth = new AuthController();
 $error = '';
 $success = '';
 $userData = null;
+$expirationTime = null;
 
 // Verificar si hay un token en la URL
 if (isset($_GET['token'])) {
@@ -22,14 +23,17 @@ if (isset($_GET['token'])) {
     // Obtener información del usuario temporal
     $database = new Database();
     $db = $database->connect();
-    $query = "SELECT id, nombre, apellido, usuario, correo FROM usuarios_temp 
-              WHERE token = :token AND fecha_creacion >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+    $query = "SELECT id, nombre, apellido, usuario, correo, UNIX_TIMESTAMP(fecha_creacion) + 120 as expiration_time 
+              FROM usuarios_temp 
+              WHERE token = :token AND fecha_creacion >= DATE_SUB(NOW(), INTERVAL 3600 SECOND)";
     $stmt = $db->prepare($query);
     $stmt->bindParam(':token', $token);
     $stmt->execute();
     $userData = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$userData) {
+    if ($userData) {
+        $expirationTime = $userData['expiration_time'];
+    } else {
         $error = "El enlace de registro no es válido o ha expirado";
     }
 
@@ -108,67 +112,11 @@ if (isset($_GET['token'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Completar Registro</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
-    <style>
-        .complete-container {
-            max-width: 500px;
-            margin: 50px auto;
-            padding: 30px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            border-radius: 8px;
-            background: white;
-        }
-        .complete-container h1 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
-        }
-        .user-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .password-rules {
-            font-size: 0.9em;
-            color: #666;
-            margin-bottom: 20px;
-        }
-        .password-strength {
-            margin-top: 5px;
-            font-size: 0.9em;
-        }
-        .password-strength.weak {
-            color: red;
-        }
-        .password-strength.medium {
-            color: orange;
-        }
-        .password-strength.strong {
-            color: green;
-        }
-        .password-requirements {
-            margin-top: 10px;
-            padding: 10px;
-            background: #f5f5f5;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
-        .password-requirements ul {
-            margin: 5px 0 0 0;
-            padding-left: 20px;
-        }
-        .requirement {
-            color: #999;
-        }
-        .requirement.fulfilled {
-            color: green;
-        }
-    </style>
-    <link rel="icon" href="<?= BASE_URL ?>pagina/img/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/countdown.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/validarclave.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login.css">
-    <script src="<?= BASE_URL ?>pagina/js/validarclave.js"></script>
     <link rel="icon" href="<?= BASE_URL ?>pagina/img/favicon.ico" type="image/x-icon">
+    <script src="<?= BASE_URL ?>pagina/js/validarclave.js"></script>
 </head>
 <body>
     <!-- Header -->
@@ -188,8 +136,17 @@ if (isset($_GET['token'])) {
                     <h3><?= htmlspecialchars($userData['nombre'] . ' ' . $userData['apellido']) ?></h3>
                     <p class="text-muted">Usuario: <?= htmlspecialchars($userData['usuario']) ?></p>
                     <p class="text-muted">Email: <?= htmlspecialchars($userData['correo']) ?></p>
-                </div>
-                
+                    <?php if ($userData && $expirationTime): ?>
+                        <div id="countdown-container" class="countdown">
+                            Tiempo restante: <span id="countdown-time"></span>
+                        </div>
+                        
+                        <script src="<?= BASE_URL ?>pagina/js/countdown.js"></script>
+                        <script>
+                            setupCountdown(<?= $expirationTime ?>, 'countdown-container', 'countdown-time');
+                        </script>
+                    <?php endif; ?> 
+                </div>     
                 <div class="password-requirements">
                     <p><strong>Requisitos de contraseña:</strong></p>
                     <ul>

@@ -390,7 +390,6 @@ class AuthController {
         
         return $this->validateSession();
     }
-
     public function checkRole($requiredRole) {
         if (!$this->isLoggedIn() || $_SESSION['rol'] != $requiredRole) {
             header('Location: ' . BASE_URL . 'pagina/login.php');
@@ -485,7 +484,7 @@ class AuthController {
                 <p>Tu token de acceso es: <strong>{$token}</strong></p>
                 <p>Por favor, haz clic en el siguiente enlace para establecer una nueva contraseña:</p>
                 <p><a href='{$resetLink}'>{$resetLink}</a></p>
-                <p>Este token expirará en 58 minutos.</p>
+                <p>Este token expirará en 2 minutos.</p>
                 <p>Si no solicitaste este cambio, por favor ignora este correo.</p>
             </body>
             </html>

@@ -3,9 +3,11 @@ require_once(__DIR__ . '/../config/paths.php');
 require_once(__DIR__ . '/../controlador/AuthController.php');
 require_once(__DIR__ . '/../config/no_cache.php');
 
-// Iniciar sesión si no está iniciada
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+// Iniciar sesión y cerrar cualquier sesión existente
+if (isset($_SESSION['user_id'])) {
+    session_unset();
+    session_destroy();
+    session_start(); // Reiniciar sesión limpia
 }
 
 $auth = new AuthController();
@@ -21,10 +23,10 @@ if (isset($_GET['token'])) {
     if (!$userData) {
         $error = "El enlace de recuperación no es válido o ha expirado";
     } else {
-        // Get token expiration time
+        // Obtener tiempo de expiración (segundos)
         $database = new Database();
         $db = $database->connect();
-        $query = "SELECT UNIX_TIMESTAMP(fecha_token) + (58 * 60) as expiration_time 
+        $query = "SELECT UNIX_TIMESTAMP(fecha_token) + 120 as expiration_time 
                   FROM tokens 
                   WHERE token = :token";
         $stmt = $db->prepare($query);
@@ -39,20 +41,7 @@ if (isset($_GET['token'])) {
         $newPassword = $_POST['new_password'] ?? '';
         $confirmPassword = $_POST['confirm_password'] ?? '';
         
-        try {
-            // Validaciones
-            if (empty($newPassword)) {
-                throw new Exception("La nueva contraseña no puede estar vacía");
-            }
-            
-            if ($newPassword !== $confirmPassword) {
-                throw new Exception("Las contraseñas no coinciden");
-            }
-            
-            if (strlen($newPassword) < 6) {
-                throw new Exception("La contraseña debe tener al menos 6 caracteres");
-            }
-            
+        try {            
             // Hashear la nueva contraseña
             $hashedPassword = hash('sha256', $newPassword);
             
@@ -149,6 +138,11 @@ if (isset($_GET['token'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Restablecer Contraseña</title>
     <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/styles.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/countdown.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/login.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>pagina/css/validarclave.css">
+    <script src="<?= BASE_URL ?>pagina/js/validarclave.js"></script>
+    <script src="<?= BASE_URL ?>pagina/js/countdown.js"></script>
     <style>
         .reset-container {
             max-width: 500px;
@@ -190,8 +184,8 @@ if (isset($_GET['token'])) {
             <?php endif; ?>
             
             <?php if ($userData && $expirationTime): ?>
-                <div id="countdown" class="countdown">
-                    Tiempo restante: <span id="time"></span>
+                <div id="countdown-container" class="countdown">
+                    Tiempo restante: <span id="countdown-time"></span>
                 </div>
                 
                 <div class="user-info">
@@ -200,12 +194,17 @@ if (isset($_GET['token'])) {
                     <p class="text-muted">Usuario: <?= htmlspecialchars($userData['usuario']) ?></p>
                 </div>
                 
-                <div class="password-rules">
+                <div class="password-requirements">
                     <p><strong>Requisitos de contraseña:</strong></p>
                     <ul>
-                        <li>Mínimo 6 caracteres</li>
-                        <li>No usar contraseñas obvias</li>
+                        <li id="req-minLength" class="requirement">Mínimo 8 caracteres</li>
+                        <li id="req-hasUpper" class="requirement">Al menos 2 letras mayúsculas</li>
+                        <li id="req-hasLower" class="requirement">Al menos 2 letras minúsculas</li>
+                        <li id="req-hasNumber" class="requirement">Al menos 2 números</li>
+                        <li id="req-hasSpecial" class="requirement">Al menos 2 caracteres especiales</li>
                     </ul>
+                    <div id="password-strength" class="password-strength"></div>
+                    <div id="password-match" class="password-strength"></div>
                 </div>
                 
                 <form method="POST" action="">
@@ -223,6 +222,54 @@ if (isset($_GET['token'])) {
                         <button type="submit" class="btn btn-block">Guardar Nueva Contraseña</button>
                     </div>
                 </form>
+
+                <script>
+                    // Configurar el contador regresivo
+                    setupCountdown(<?= $expirationTime ?>, 'countdown-container', 'countdown-time');
+                    
+                    // Configurar la validación de contraseña
+                    document.addEventListener('DOMContentLoaded', function() {
+                        // Adaptar la validación para los IDs de este formulario
+                        function validatePasswords() {
+                            const password = document.getElementById('new_password').value;
+                            const confirmPassword = document.getElementById('confirm_password').value;
+                            const submitButton = document.querySelector('button[type="submit"]');
+
+                            // Verificar fortaleza de contraseña
+                            const isStrong = checkPasswordStrength(password);
+
+                            // Verificar coincidencia
+                            const matchElement = document.getElementById('password-match');
+                            if (password && confirmPassword) {
+                                if (password === confirmPassword) {
+                                    matchElement.textContent = 'Las contraseñas coinciden';
+                                    matchElement.className = 'password-strength strong';
+                                } else {
+                                    matchElement.textContent = 'Las contraseñas no coinciden';
+                                    matchElement.className = 'password-strength weak';
+                                }
+                            } else {
+                                matchElement.textContent = '';
+                            }
+
+                            // Habilitar/deshabilitar botón
+                            if (submitButton) {
+                                submitButton.disabled = !(isStrong && password && confirmPassword && password === confirmPassword);
+                            }
+                        }
+
+                        document.getElementById('new_password').addEventListener('input', function() {
+                            validatePasswords();
+                        });
+                        
+                        document.getElementById('confirm_password').addEventListener('input', function() {
+                            validatePasswords();
+                        });
+                        
+                        // Validar inicialmente
+                        validatePasswords();
+                    });
+                </script>
             <?php else: ?>
                 <div class="alert warning">
                     <?= $error ?: 'Token no válido' ?>
@@ -231,44 +278,6 @@ if (isset($_GET['token'])) {
                     <a href="<?= BASE_URL ?>pagina/solicitartoken.php">Solicitar nuevo enlace de recuperación</a>
                 </p>
             <?php endif; ?>
-        <script>
-            const expirationTime = <?= $expirationTime ?>;
-            
-            function updateCountdown() {
-                const now = Math.floor(Date.now() / 1000);
-                const remaining = expirationTime - now;
-                
-                if (remaining <= 0) {
-                    document.getElementById('time').textContent = '0:00';
-                    document.getElementById('countdown').classList.add('expired');
-                    document.getElementById('countdown').textContent = 'El token ha expirado';
-                    
-                    // Disable form inputs
-                    const inputs = document.querySelectorAll('input');
-                    inputs.forEach(input => {
-                        input.disabled = true;
-                    });
-                    
-                    // Change button text
-                    const button = document.querySelector('button[type="submit"]');
-                    if (button) {
-                        button.disabled = true;
-                        button.textContent = 'Token expirado';
-                    }
-                    
-                    return;
-                }
-                
-                const minutes = Math.floor(remaining / 60);
-                const seconds = remaining % 60;
-                document.getElementById('time').textContent = 
-                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            }
-            
-            // Update every second
-            updateCountdown();
-            setInterval(updateCountdown, 1000);
-        </script>    
         </div>
     </main>
 
